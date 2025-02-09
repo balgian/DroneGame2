@@ -16,10 +16,10 @@ FILE *logfile;
 void write_log(FILE *logfile, pid_t pid, const char *message);
 void signal_triggered(int signum);
 int create_pipes(int pipes[NUM_CHILD_PIPES][2]);
-int create_processes(int pipes_out[NUM_CHILD_PIPES][2], int pipes_in[NUM_CHILD_PIPES][2],
+int create_processes(int pipes_out[NUM_CHILD_PIPES-1][2], int pipes_in[2],
     pid_t pids[NUM_CHILD_PROCESSES-2], int logfile_fd, pid_t pgid);
 pid_t create_watchdog_process(pid_t pgid, int logfile_fd);
-pid_t create_blackboard_process(int pipes_in[NUM_CHILD_PIPES][2], int pipes_out[NUM_CHILD_PIPES][2],
+pid_t create_blackboard_process(int pipes_in[NUM_CHILD_PIPES-2][2], int pipes_out[2],
     pid_t watchdog_pid, int logfile_fd, pid_t pgid);
 
 int main(void) {
@@ -50,33 +50,31 @@ int main(void) {
     write_log(logfile, getpid(), "Main process started.");
 
     // * Declaration of pipes and process IDs
-    int pipes_to_balckboard[NUM_CHILD_PIPES][2]; // * Array to hold pipe file descriptors
-    int pipes_from_balckboard[NUM_CHILD_PIPES][2]; // * Array to hold pipe file descriptors
+    // * Those two are the pipes from Drone and Keyboard to Blackboard
+    int pipes[NUM_CHILD_PIPES-1][2];
+    int pipe_blackboard[2];
     pid_t pids[NUM_CHILD_PROCESSES]; // * Array to hold child and blackboard PIDs
 
     // * Step 1: Create pipes
-    if (create_pipes(pipes_to_balckboard) == -1) {
-        fprintf(stderr, "Failed to create pipes.\n");
-        exit(EXIT_FAILURE);
-    }
-    if (create_pipes(pipes_from_balckboard) == -1) {
+    if (create_pipes(pipes) == -1) {
         fprintf(stderr, "Failed to create pipes.\n");
         exit(EXIT_FAILURE);
     }
 
     // * Step 2: Create processes that use pipes
-    if (create_processes(pipes_to_balckboard, pipes_from_balckboard, pids, logfile_fd, pgid) == -1) {
+    if (create_processes(pipes, pipe_blackboard, pids, logfile_fd, pgid) == -1) {
         fprintf(stderr, "Failed to create processes.\n");
         // * Close all pipes before exiting
         for (int i = 0; i < NUM_CHILD_PIPES; i++) {
-            close(pipes_to_balckboard[i][0]);
-            close(pipes_to_balckboard[i][1]);
-            close(pipes_from_balckboard[i][0]);
-            close(pipes_from_balckboard[i][1]);
+            close(pipes[i][0]);
+            close(pipes[i][1]);
         }
+        close(pipe_blackboard[0]);
+        close(pipe_blackboard[1]);
         exit(EXIT_FAILURE);
     }
 
+    // !!!
     // * Step 3: Create the Watchdog process
     const pid_t watchdog_pid = create_watchdog_process(pgid, logfile_fd);
     if (watchdog_pid == -1) {
@@ -87,16 +85,16 @@ int main(void) {
         }
         // * Close all pipes before exiting
         for (int i = 0; i < NUM_CHILD_PIPES; i++) {
-            close(pipes_to_balckboard[i][0]);
-            close(pipes_to_balckboard[i][1]);
-            close(pipes_from_balckboard[i][0]);
-            close(pipes_from_balckboard[i][1]);
+            close(pipes[i][0]);
+            close(pipes[i][1]);
         }
+        close(pipe_blackboard[0]);
+        close(pipe_blackboard[1]);
         exit(EXIT_FAILURE);
     }
 
     // * Step 4: Create the Blackboard Process
-    const pid_t blackboard_pid = create_blackboard_process(pipes_to_balckboard, pipes_from_balckboard, watchdog_pid, logfile_fd, pgid);
+    const pid_t blackboard_pid = create_blackboard_process(pipes, pipe_blackboard, watchdog_pid, logfile_fd, pgid);
     if (blackboard_pid == -1) {
         fprintf(stderr, "Failed to create blackboard process.\n");
         // * Terminate child processes and watchdog
@@ -106,21 +104,21 @@ int main(void) {
         kill(watchdog_pid, SIGTERM);
         // * Close all pipes before exiting
         for (int i = 0; i < NUM_CHILD_PIPES; i++) {
-            close(pipes_to_balckboard[i][0]);
-            close(pipes_to_balckboard[i][1]);
-            close(pipes_from_balckboard[i][0]);
-            close(pipes_from_balckboard[i][1]);
+            close(pipes[i][0]);
+            close(pipes[i][1]);
         }
+        close(pipe_blackboard[0]);
+        close(pipe_blackboard[1]);
         exit(EXIT_FAILURE);
     }
 
     // ! Step 5: Close All Pipes in the Parent Process
     for (int i = 0; i < NUM_CHILD_PIPES; i++) {
-        close(pipes_to_balckboard[i][0]);
-        close(pipes_to_balckboard[i][1]);
-        close(pipes_from_balckboard[i][0]);
-        close(pipes_from_balckboard[i][1]);
+        close(pipes[i][0]);
+        close(pipes[i][1]);
     }
+    close(pipe_blackboard[0]);
+    close(pipe_blackboard[1]);
 
     // ! Step 6: Wait for All Child Processes to finish
     for (int i = 0; i < NUM_CHILD_PROCESSES; i++) {
@@ -163,7 +161,7 @@ int create_pipes(int pipes[NUM_CHILD_PIPES][2]) {
     return 0;
 }
 
-int create_processes(int pipes_out[NUM_CHILD_PIPES][2], int pipes_in[NUM_CHILD_PIPES][2],
+int create_processes(int pipes_out[NUM_CHILD_PIPES-1][2], int pipes_in[2],
     pid_t pids[NUM_CHILD_PROCESSES-2], const int logfile_fd, const pid_t pgid) {
     /*
      * Function to create child and blackboard processes.
@@ -181,9 +179,9 @@ int create_processes(int pipes_out[NUM_CHILD_PIPES][2], int pipes_in[NUM_CHILD_P
     /*
      * Create 5 processes:
      * - 0: Keyboard input manager (write to Blackboard -> 1 pipe)
-     * - 1: Obstacle generator (read & write -> 2 pipes)
-     * - 2: Target generators (read & write -> 2 pipes)
-     * - 3: Drone dynamics process (read & write -> 2 pipes)
+     * - 1: Obstacles generator (write to Targets -> 1 pipe)
+     * - 2: Targets generator (read from Obstacles -> same pipe of Obstacles)
+     * - 3: Drone dynamics process (read & write from/to Blackboard-> 2 pipes)
     */
     for (int i = 0; i < NUM_CHILD_PROCESSES-2; i++) {
         pids[i] = fork();
@@ -220,32 +218,66 @@ int create_processes(int pipes_out[NUM_CHILD_PIPES][2], int pipes_in[NUM_CHILD_P
                     if (j != i) {
                         close(pipes_out[j][0]);
                         close(pipes_out[j][1]);
-                        close(pipes_in[j][0]);
-                        close(pipes_in[j][1]);
                     }
                 }
                 close(pipes_out[i][0]);
-                close(pipes_in[i][0]);
-                close(pipes_in[i][1]);
+                close(pipes_in[0]);
+                close(pipes_in[1]);
 
                 char write_pipe_str[10];
                 snprintf(write_pipe_str, sizeof(write_pipe_str), "%d", pipes_out[i][1]);
                 execl(child_executables[i], child_executables[i], write_pipe_str, logfile_fd_str, NULL);
-            } else {
+            }
+            if (i == 1) {
                 // * Close all not needed pipes
                 for (int j = 0; j < NUM_CHILD_PIPES; j++) {
                     if (j != i) {
-                        close(pipes_in[j][0]);
-                        close(pipes_in[j][1]);
                         close(pipes_out[j][0]);
                         close(pipes_out[j][1]);
                     }
                 }
-                close(pipes_in[i][1]);
+                close(pipes_in[0]);
+                close(pipes_in[1]);
+
+                // * The obstacle process only send data to the target process
+                close(pipes_out[1][0]);
+
+                char write_pipe_str[10];
+                snprintf(write_pipe_str, sizeof(write_pipe_str), "%d", pipes_out[i][1]);
+                execl(child_executables[i], child_executables[i], write_pipe_str,
+                    logfile_fd_str, NULL);
+            }
+            if (i == 2) {
+                // * Close all not needed pipes
+                for (int j = 0; j < NUM_CHILD_PIPES; j++) {
+                    if (j != i-1) {
+                        close(pipes_out[j][0]);
+                        close(pipes_out[j][1]);
+                    }
+                }
+                close(pipes_in[0]);
+                close(pipes_in[1]);
+                // * The obstacle process only send data to the target process
+                close(pipes_out[1][1]);
+
+                char read_pipe_str[10];
+                snprintf(read_pipe_str, sizeof(read_pipe_str), "%d", pipes_out[i][0]);
+                execl(child_executables[i], child_executables[i], read_pipe_str,
+                    logfile_fd_str, NULL);
+            }
+            else {
+                // * Close all not needed pipes
+                for (int j = 0; j < NUM_CHILD_PIPES; j++) {
+                    if (j != i-1) {
+                        close(pipes_out[j][0]);
+                        close(pipes_out[j][1]);
+                    }
+                }
+                close(pipes_in[1]);
                 close(pipes_out[i][0]);
 
                 char read_pipe_str[10], write_pipe_str[10];
-                snprintf(read_pipe_str, sizeof(read_pipe_str), "%d", pipes_in[i][0]);
+                snprintf(read_pipe_str, sizeof(read_pipe_str), "%d", pipes_in[0]);
                 snprintf(write_pipe_str, sizeof(write_pipe_str), "%d", pipes_out[i][1]);
                 execl(child_executables[i], child_executables[i], read_pipe_str, write_pipe_str,
                     logfile_fd_str, NULL);
@@ -287,7 +319,7 @@ pid_t create_watchdog_process(const pid_t pgid, const int logfile_fd) {
     return watchdog_pid;
 }
 
-pid_t create_blackboard_process(int pipes_in[NUM_CHILD_PIPES][2], int pipes_out[NUM_CHILD_PIPES][2],
+pid_t create_blackboard_process(int pipes_in[NUM_CHILD_PIPES-2][2], int pipes_out[2],
     const pid_t watchdog_pid, int logfile_fd, pid_t pgid) {
     /*
      * Function to create the blackboard process.
@@ -310,10 +342,9 @@ pid_t create_blackboard_process(int pipes_in[NUM_CHILD_PIPES][2], int pipes_out[
         // * Close all not needed pipes
         for (int i = 0; i < NUM_CHILD_PIPES; i++) {
             close(pipes_in[i][1]);
-            close(pipes_out[i][0]);
         }
-        // * For the keyboard is required a mono directiona communication
-        close(pipes_out[0][0]);
+        close(pipes_in[1][0]);
+        close(pipes_out[0]);
 
         /*
          * Prepare arguments for the blackboard executable
@@ -330,8 +361,7 @@ pid_t create_blackboard_process(int pipes_in[NUM_CHILD_PIPES][2], int pipes_out[
         snprintf(logfile_fd_str, sizeof(logfile_fd_str), "%d", logfile_fd);
 
         // * Allocate memory for arguments
-        // ! executable name + read_fds + write_fds (excluding keyboard_manager) + NULL
-        const int total_args = 2 * NUM_CHILD_PIPES + 1;
+        const int total_args = 2 * NUM_CHILD_PIPES;
         char **args = malloc(total_args * sizeof(char *));
         if (!args) {
             perror("malloc");
@@ -342,26 +372,18 @@ pid_t create_blackboard_process(int pipes_in[NUM_CHILD_PIPES][2], int pipes_out[
 
         // * Add all read_fds
         int arg_index = 1;
-        for (int i = 0; i < NUM_CHILD_PIPES; i++) {
-            char *read_pipe_str = malloc(10);
-            if (!read_pipe_str) {
-                perror("malloc");
-                exit(EXIT_FAILURE);
-            }
-            snprintf(read_pipe_str, 10, "%d", pipes_in[i][0]);
-            args[arg_index++] = read_pipe_str;
-        }
 
-        // * Add all write_fds (excluding keyboard_manager)
-        for (int i = 1; i < NUM_CHILD_PIPES; i++) {
-            char *write_pipe_str = malloc(10);
-            if (!write_pipe_str) {
-                perror("malloc");
-                exit(EXIT_FAILURE);
-            }
-            snprintf(write_pipe_str, 10, "%d", pipes_out[i][1]);
-            args[arg_index++] = write_pipe_str;
-        }
+        char *read_pipe_str = malloc(10);
+        snprintf(read_pipe_str, 10, "%d", pipes_in[0][0]);
+        args[arg_index++] = read_pipe_str;
+        read_pipe_str = malloc(10);
+        snprintf(read_pipe_str, 10, "%d", pipes_in[2][0]);
+        args[arg_index++] = read_pipe_str;
+
+        char *write_pipe_str = malloc(10);
+        snprintf(write_pipe_str, 10, "%d", pipes_out[1]);
+        args[arg_index++] = write_pipe_str;
+
         // * Add watchdog_pid
         args[arg_index++] = watchdog_pid_str;
         args[arg_index++] = logfile_fd_str;

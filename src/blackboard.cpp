@@ -14,7 +14,295 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <chrono>
+#include <thread>
+#include <iostream>
+#include <atomic>
+#include <vector>
+#include <random>
+#include <algorithm>
+
 #include "macros.h"
+#include "ObstaclesPubSubTypes.hpp"
+#include "TargetsPubSubTypes.hpp"
+
+/**
+ * @file CustomTransportSubscriber.cpp
+ *
+ * Subscriber che si iscrive a due topic distinti:
+ *   - "topic 1" per i messaggi di tipo Obstacles:
+ *       struct Obstacles {
+ *           sequence<long> obstacles_x;
+ *           sequence<long> obstacles_y;
+ *           long obstacles_number;
+ *       };
+ *
+ *   - "topic 2" per i messaggi di tipo Targets:
+ *       struct Targets {
+ *           sequence<long> targets_x;
+ *           sequence<long> targets_y;
+ *           long targets_number;
+ *       };
+ */
+
+#include <fastdds/dds/domain/DomainParticipant.hpp>
+#include <fastdds/dds/domain/DomainParticipantFactory.hpp>
+#include <fastdds/dds/subscriber/DataReader.hpp>
+#include <fastdds/dds/subscriber/DataReaderListener.hpp>
+#include <fastdds/dds/subscriber/Subscriber.hpp>
+#include <fastdds/dds/subscriber/qos/DataReaderQos.hpp>
+#include <fastdds/dds/subscriber/SampleInfo.hpp>
+#include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/rtps/transport/shared_mem/SharedMemTransportDescriptor.hpp>
+
+using namespace eprosima::fastdds::dds;
+using namespace std::chrono_literals;
+
+// Subscriber che gestisce i messaggi Obstacles
+class ObstaclesListener : public DataReaderListener {
+public:
+    std::atomic_int samples_;
+    Obstacles obstacles_msg_;
+    ObstaclesListener() : samples_(0) {}
+    ~ObstaclesListener() override {}
+
+    void on_subscription_matched(DataReader* reader, const SubscriptionMatchedStatus &info) override
+    {
+        if (info.current_count_change == 1)
+        {
+            std::cout << "Obstacles Subscriber matched." << std::endl;
+        }
+        else if (info.current_count_change == -1)
+        {
+            std::cout << "Obstacles Subscriber unmatched." << std::endl;
+        }
+    }
+
+    void on_data_available(DataReader* reader) override {
+        SampleInfo info;
+        if (reader->take_next_sample(&obstacles_msg_, &info) == RETCODE_OK)
+        {
+            if (info.valid_data)
+            {
+                samples_++;
+                std::cout << "Obstacles Sample #" << samples_ << ": "
+                          << "Number of obstacles: " << obstacles_msg_.obstacles_number() << std::endl;
+                const auto & xs = obstacles_msg_.obstacles_x();
+                const auto & ys = obstacles_msg_.obstacles_y();
+                for (size_t i = 0; i < xs.size(); i++)
+                {
+                    std::cout << "  (" << xs[i] << ", " << ys[i] << ")";
+                }
+                std::cout << std::endl;
+            }
+        }
+    }
+};
+
+// Subscriber che gestisce i messaggi Targets
+class TargetsListener : public DataReaderListener
+{
+public:
+    std::atomic_int samples_;
+    Targets targets_msg_;
+
+    TargetsListener() : samples_(0) { }
+    ~TargetsListener() override { }
+
+    void on_subscription_matched(
+        DataReader* reader,
+        const SubscriptionMatchedStatus &info) override
+    {
+        if (info.current_count_change == 1)
+        {
+            std::cout << "Targets Subscriber matched." << std::endl;
+        }
+        else if (info.current_count_change == -1)
+        {
+            std::cout << "Targets Subscriber unmatched." << std::endl;
+        }
+    }
+
+    void on_data_available(DataReader* reader) override
+    {
+        SampleInfo info;
+        if (reader->take_next_sample(&targets_msg_, &info) == RETCODE_OK)
+        {
+            if (info.valid_data)
+            {
+                samples_++;
+                std::cout << "Targets Sample #" << samples_ << ": "
+                          << "Number of targets: " << targets_msg_.targets_number() << std::endl;
+                const auto & xs = targets_msg_.targets_x();
+                const auto & ys = targets_msg_.targets_y();
+                for (size_t i = 0; i < xs.size(); i++)
+                {
+                    std::cout << "  (" << xs[i] << ", " << ys[i] << ")";
+                }
+                std::cout << std::endl;
+            }
+        }
+    }
+};
+
+class CustomTransportSubscriber {
+private:
+    DomainParticipant *participant_;
+    Subscriber *subscriber_;
+
+    // Topics e DataReaders per Obstacles e Targets
+    Topic *obstacles_topic_;
+    DataReader *obstacles_reader_;
+    Topic *targets_topic_;
+    DataReader *targets_reader_;
+
+    // TypeSupport per i due tipi
+    TypeSupport obstacles_type_;
+    TypeSupport targets_type_;
+
+    ObstaclesListener obstacles_listener_;
+    TargetsListener targets_listener_;
+
+public:
+    CustomTransportSubscriber()
+        : participant_(nullptr)
+        , subscriber_(nullptr)
+        , obstacles_topic_(nullptr)
+        , obstacles_reader_(nullptr)
+        , targets_topic_(nullptr)
+        , targets_reader_(nullptr)
+        , obstacles_type_(new ObstaclesPubSubType())
+        , targets_type_(new TargetsPubSubType())
+    { }
+
+    virtual ~CustomTransportSubscriber()
+    {
+        if (obstacles_reader_ != nullptr)
+        {
+            subscriber_->delete_datareader(obstacles_reader_);
+        }
+        if (targets_reader_ != nullptr)
+        {
+            subscriber_->delete_datareader(targets_reader_);
+        }
+        if (obstacles_topic_ != nullptr)
+        {
+            participant_->delete_topic(obstacles_topic_);
+        }
+        if (targets_topic_ != nullptr)
+        {
+            participant_->delete_topic(targets_topic_);
+        }
+        if (subscriber_ != nullptr)
+        {
+            participant_->delete_subscriber(subscriber_);
+        }
+        DomainParticipantFactory::get_instance()->delete_participant(participant_);
+    }
+
+    //! Inizializza il subscriber per entrambi i topic.
+    bool init() {
+        DomainParticipantQos participantQos;
+        participantQos.name("Participant_subscriber");
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
+        if (participant_ == nullptr)
+        {
+            return false;
+        }
+
+        // Registra i due tipi
+        obstacles_type_.register_type(participant_);
+        targets_type_.register_type(participant_);
+
+        // Crea i topic con nomi "topic 1" e "topic 2"
+        obstacles_topic_ = participant_->create_topic("topic 1", obstacles_type_.get_type_name(), TOPIC_QOS_DEFAULT);
+        if (obstacles_topic_ == nullptr)
+        {
+            return false;
+        }
+        targets_topic_ = participant_->create_topic("topic 2", targets_type_.get_type_name(), TOPIC_QOS_DEFAULT);
+        if (targets_topic_ == nullptr)
+        {
+            return false;
+        }
+
+        // Crea il Subscriber
+        subscriber_ = participant_->create_subscriber(SUBSCRIBER_QOS_DEFAULT, nullptr);
+        if (subscriber_ == nullptr)
+        {
+            return false;
+        }
+
+        // Crea il DataReader per Obstacles
+        obstacles_reader_ = subscriber_->create_datareader(obstacles_topic_, DATAREADER_QOS_DEFAULT, &obstacles_listener_);
+        if (obstacles_reader_ == nullptr)
+        {
+            return false;
+        }
+
+        // Crea il DataReader per Targets
+        targets_reader_ = subscriber_->create_datareader(targets_topic_, DATAREADER_QOS_DEFAULT, &targets_listener_);
+        if (targets_reader_ == nullptr)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
+    // Attende finché non viene ricevuto almeno un messaggio per ciascun topic.
+    while (obstacles_listener_.samples_ == 0 || targets_listener_.samples_ == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    // Inizializza la griglia: imposta tutti i caratteri a spazio.
+    memset(grid, ' ', sizeof(char) * GAME_HEIGHT * GAME_WIDTH);
+
+    // --- Popola la griglia con i dati degli ostacoli (riproporzionando le coordinate) ---
+    size_t obs_count = obstacles_listener_.obstacles_msg_.obstacles_x().size();
+    for (size_t i = 0; i < obs_count; i++)
+    {
+        int orig_x = obstacles_listener_.obstacles_msg_.obstacles_x()[i];
+        int orig_y = obstacles_listener_.obstacles_msg_.obstacles_y()[i];
+        // Riproporziona le coordinate: si assume che i valori originali siano nell'intervallo [0, obs_count]
+        int new_x = (GAME_WIDTH * orig_x) / obs_count;
+        int new_y = (GAME_HEIGHT * orig_y) / obs_count;
+        // Correggi eventuali out-of-bound
+        if (new_x < 0) new_x = 0;
+        if (new_x >= GAME_WIDTH) new_x = GAME_WIDTH - 1;
+        if (new_y < 0) new_y = 0;
+        if (new_y >= GAME_HEIGHT) new_y = GAME_HEIGHT - 1;
+        grid[new_y][new_x] = 'o';  // 'o' per indicare un ostacolo
+    }
+
+    // --- Popola la griglia con i dati dei target, assegnando ad ognuno un numero casuale univoco ---
+    // Prepara un vettore di cifre (caratteri) da '0' a '9'
+    std::vector<char> digits = {'0','1','2','3','4','5','6','7','8','9'};
+    // Mescola il vettore per ottenere un ordine casuale
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(digits.begin(), digits.end(), g);
+
+    size_t trg_count = targets_listener_.targets_msg_.targets_x().size();
+    // Per ogni target, riproporziona le coordinate e assegna una cifra unica (se disponibile)
+    for (size_t i = 0; i < trg_count && i < digits.size(); i++)
+    {
+        int orig_x = targets_listener_.targets_msg_.targets_x()[i];
+        int orig_y = targets_listener_.targets_msg_.targets_y()[i];
+        // Riproporziona: si assume che i valori originali siano nell'intervallo [0, trg_count]
+        int new_x = (GAME_WIDTH * orig_x) / trg_count;
+        int new_y = (GAME_HEIGHT * orig_y) / trg_count;
+        if (new_x < 0) new_x = 0;
+        if (new_x >= GAME_WIDTH) new_x = GAME_WIDTH - 1;
+        if (new_y < 0) new_y = 0;
+        if (new_y >= GAME_HEIGHT) new_y = GAME_HEIGHT - 1;
+        // Assegna la cifra (non ripetuta) al target nella griglia
+        grid[new_y][new_x] = digits[i];
+    }
+}
+};
 
 FILE *logfile;
 // Questa variabile viene modificata dal signal handler
@@ -25,29 +313,27 @@ volatile sig_atomic_t sig_received = 0;
  * @param argc Number of arguments.
  * @param argv Array of arguments.
  * @param read_fds Array to store read file descriptors.
- * @param write_fds Array to store write file descriptors.
+ * @param write_fds Array to store write file descriptor.
  * @param watchdog_pid Pointer to store the watchdog PID.
  * @return EXIT_SUCCESS on success, EXIT_FAILURE on error.
  */
 int parser(int argc, char *argv[], int *read_fds, int *write_fds, pid_t *watchdog_pid) {
     // * Parse read file descriptors
-    for (int i = 0; i < NUM_CHILD_PIPES; i++) {
+    for (int i = 0; i < NUM_CHILD_PIPES-1; i++) {
         char *endptr;
         read_fds[i] = strtol(argv[i + 1], &endptr, 10);
         if (*endptr != '\0' || read_fds[i] < 0) {
-            fprintf(stderr, "Invalid read file descriptor: %s\n", argv[i + 1]);
+            fprintf(stderr, "Invalid read file descriptor BLACK: %s\n", argv[i + 1]);
             return EXIT_FAILURE;
         }
     }
 
     // * Parse write file descriptors (excluding keyboard_manager)
-    for (int i = 0; i < NUM_CHILD_PIPES - 1; i++) {
-        char *endptr;
-        write_fds[i] = strtol(argv[NUM_CHILD_PIPES + i + 1], &endptr, 10);
-        if (*endptr != '\0' || write_fds[i] < 0) {
-            fprintf(stderr, "Invalid write file descriptor: %s\n", argv[NUM_CHILD_PIPES + i + 1]);
-            return EXIT_FAILURE;
-        }
+    char *endptr;
+    *write_fds = strtol(argv[NUM_CHILD_PIPES], &endptr, 10);
+    if (*endptr != '\0' || *write_fds < 0) {
+        fprintf(stderr, "Invalid write file descriptor: %s\n", argv[NUM_CHILD_PIPES]);
+        return EXIT_FAILURE;
     }
 
     // * Parse watchdog PID
@@ -215,30 +501,25 @@ int main(const int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (argc != 2 * NUM_CHILD_PIPES + 2) {
-        fprintf(stderr, "Usage: %s <read_fd1> <read_fd2> ... <read_fdN> <write_fd1> ... "
-                        "<write_fdN-1> <watchdog_pid> <logfile_fd>\n",
-                argv[0]);
+    if (argc != 2 * NUM_CHILD_PIPES + 1) {
+        fprintf(stderr, "Usage: %s <read_fd_keyboard> <read_fd_dynamics> <write_fd_dynamics> <watchdog_pid>"
+                        "<logfile_fd>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     // * Parse argv
-    int read_fds[NUM_CHILD_PIPES];
-    int write_fds[NUM_CHILD_PIPES - 1];
+    int read_fds[NUM_CHILD_PIPES-1];
+    int write_fds;
     pid_t watchdog_pid = 0;
-    if (parser(argc, argv, read_fds, write_fds, &watchdog_pid) == EXIT_FAILURE) {
+    if (parser(argc, argv, read_fds, &write_fds, &watchdog_pid) == EXIT_FAILURE) {
         return EXIT_FAILURE;
     }
 
     // ! Map the child pipes to more meaningful names
     const int keyboard = read_fds[0];
-    const int obstacle_read = read_fds[1];
-    const int target_read = read_fds[2];
-    const int dynamic_read = read_fds[3];
+    const int dynamic_read = read_fds[1];
 
-    const int obstacle_write = write_fds[0];
-    const int target_write = write_fds[1];
-    const int dynamic_write = write_fds[2];
+    const int dynamic_write = write_fds;
 
     // *
     mkfifo(INSPECTOR_FIFO, 0666);
@@ -330,29 +611,25 @@ int main(const int argc, char *argv[]) {
                 break;
             }
             case 1: { // * initialization
-                // * OBSTACLES
-                // * Take the obstacles position
-                if (read(obstacle_read, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char))  != GAME_HEIGHT * GAME_WIDTH * sizeof(char)) {
-                    perror("read obstacle");
-                    status = -1;
-                    c = 'q';
-                    break;
+                std::cout << "Starting subscriber." << std::endl;
+
+                CustomTransportSubscriber *mysub = new CustomTransportSubscriber();
+                if (mysub->init())
+                {
+                    mysub->run(grid);
+
+                    // Ora la griglia è stata popolata; ad esempio, la si può stampare
+                    for (int y = 0; y < GAME_HEIGHT; y++)
+                    {
+                        for (int x = 0; x < GAME_WIDTH; x++)
+                        {
+                            std::cout << grid[y][x];
+                        }
+                        std::cout << std::endl;
+                    }
                 }
-                // * TARGETS
-                // * Send the map to the targets
-                if (write(target_write, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
-                    perror("write target");
-                    status = -1;
-                    c = 'q';
-                    break;
-                }
-                // * Take the targets position
-                if (read(target_read, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char))  != GAME_HEIGHT * GAME_WIDTH * sizeof(char)) {
-                    perror("read targets");
-                    status = -1;
-                    c = 'q';
-                    break;
-                }
+                delete mysub;
+
                 // ! Clean possible dirties in grid due to pipes
                 for (int row = 0; row < GAME_HEIGHT; row++) {
                     for (int col = 0; col < GAME_WIDTH; col++) {
@@ -544,9 +821,7 @@ int main(const int argc, char *argv[]) {
     for (int i = 0; i < NUM_CHILD_PIPES; i++) {
         close(read_fds[i]);
     }
-    for (int i = 0; i < NUM_CHILD_PIPES - 1; i++) {
-        close(write_fds[i]);
-    }
+    close(write_fds);
     fclose(logfile);
 
     return EXIT_SUCCESS;

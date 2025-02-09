@@ -23,6 +23,7 @@ add_custom_command(
         OUTPUT
         ${GENERATED_DIR}/ObstaclesPubSubTypes.h
         ${GENERATED_DIR}/ObstaclesPubSubTypes.cxx
+        ${GENERATED_DIR}/ObstaclesTypeObjectSupport.cxx   # Supporto agli xtypes per Obstacles
         COMMAND java -jar /home/parallels/Fast-DDS-Gen/build/libs/fastddsgen.jar -example CMake ${IDL_OBSTACLES} -d ${GENERATED_DIR} -replace
         DEPENDS ${IDL_OBSTACLES}
         COMMENT "Generating DDS files from ${IDL_OBSTACLES}"
@@ -33,6 +34,7 @@ add_custom_command(
         OUTPUT
         ${GENERATED_DIR}/TargetsPubSubTypes.h
         ${GENERATED_DIR}/TargetsPubSubTypes.cxx
+        ${GENERATED_DIR}/TargetsTypeObjectSupport.cxx   # Supporto agli xtypes per Targets
         COMMAND java -jar /home/parallels/Fast-DDS-Gen/build/libs/fastddsgen.jar -example CMake ${IDL_TARGET} -d ${GENERATED_DIR} -replace
         DEPENDS ${IDL_TARGET}
         COMMENT "Generating DDS files from ${IDL_TARGET}"
@@ -43,8 +45,10 @@ add_custom_target(generate_dds_files ALL
         DEPENDS
         ${GENERATED_DIR}/ObstaclesPubSubTypes.h
         ${GENERATED_DIR}/ObstaclesPubSubTypes.cxx
+        ${GENERATED_DIR}/ObstaclesTypeObjectSupport.cxx
         ${GENERATED_DIR}/TargetsPubSubTypes.h
         ${GENERATED_DIR}/TargetsPubSubTypes.cxx
+        ${GENERATED_DIR}/TargetsTypeObjectSupport.cxx
 )
 
 # Add the generated directory to the include paths
@@ -56,18 +60,38 @@ link_directories(/home/parallels/fastdds/lib)
 
 # * Add the executables
 add_executable(DroneGame main.c)
-add_executable(blackboard src/blackboard.c)
+
+# Updated blackboard target: include the generated TypeObjectSupport sources
+add_executable(blackboard
+        src/blackboard.cpp
+        ${GENERATED_DIR}/ObstaclesPubSubTypes.cxx
+        ${GENERATED_DIR}/ObstaclesTypeObjectSupport.cxx
+        ${GENERATED_DIR}/TargetsPubSubTypes.cxx
+        ${GENERATED_DIR}/TargetsTypeObjectSupport.cxx
+)
+
 add_executable(keyboard_manager src/keyboard_manager.c)
 
 # For processes using Fast-DDS, compile as C++
-add_executable(obstacles src/obstacles.cpp ${GENERATED_DIR}/ObstaclesPubSubTypes.cxx)
-add_executable(targets_generator src/obstacles.cpp ${GENERATED_DIR}/TargetsPubSubTypes.cxx)
+add_executable(obstacles
+        src/obstacles.cpp
+        ${GENERATED_DIR}/ObstaclesPubSubTypes.cxx
+        ${GENERATED_DIR}/ObstaclesTypeObjectSupport.cxx
+)
+
+# For the Targets publisher, use a dedicated source file (ensure it exists)
+add_executable(targets_generator
+        src/targets_generator.cpp
+        ${GENERATED_DIR}/TargetsPubSubTypes.cxx
+        ${GENERATED_DIR}/TargetsTypeObjectSupport.cxx
+)
 
 add_executable(drone_dynamics src/drone_dynamics.c)
 add_executable(watchdog src/watchdog.c)
 add_executable(inspector src/inspector_window.c)
 
 # Make DDS-dependent targets depend on DDS generation
+add_dependencies(blackboard generate_dds_files)
 add_dependencies(obstacles generate_dds_files)
 add_dependencies(targets_generator generate_dds_files)
 
@@ -78,7 +102,7 @@ set_target_properties(
 )
 
 # Link ncurses to the appropriate targets
-target_link_libraries(blackboard PRIVATE m ${CURSES_LIBRARIES})
+target_link_libraries(blackboard PRIVATE fastdds fastcdr m ${CURSES_LIBRARIES})
 target_link_libraries(keyboard_manager PRIVATE ${CURSES_LIBRARIES})
 target_link_libraries(inspector PRIVATE ${CURSES_LIBRARIES})
 target_link_libraries(drone_dynamics PRIVATE m)

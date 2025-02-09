@@ -10,7 +10,7 @@
 *
 * Total: 7 pipes
 */
-#define NUM_CHILD_PIPES 4
+#define NUM_CHILD_PIPES 3
 #define NUM_CHILD_PROCESSES 6
 
 #define INSPECTOR_FIFO "/tmp/inspector_fifo"

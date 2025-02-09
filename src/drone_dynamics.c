@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
 
   int read_fd = atoi(argv[1]);
   if (read_fd <= 0) {
-    fprintf(stderr, "Invalid read file descriptor: %s\n", argv[1]);
+    fprintf(stderr, "Invalid read file descriptor DYNAMIC: %s\n", argv[1]);
     return EXIT_FAILURE;
   }
 

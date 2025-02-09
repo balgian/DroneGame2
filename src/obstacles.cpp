@@ -3,134 +3,90 @@
 //
 // src/obstacles.cpp
 
-#include "ObstaclesPubSubTypes.hpp"
-
+#include <stdlib.h>
+#include <unistd.h>
+#include <iostream>
+#include <string.h>
+#include <signal.h>
+#include <cstdlib>
+#include <cstring>
 #include <chrono>
 #include <thread>
+#include <atomic>
+#include <ctime>
 
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
 #include <fastdds/dds/publisher/DataWriter.hpp>
 #include <fastdds/dds/publisher/DataWriterListener.hpp>
-#include <fastdds/rtps/transport/shared_mem/SharedMemTransportDescriptor.hpp>
 #include <fastdds/dds/publisher/Publisher.hpp>
 #include <fastdds/dds/topic/TypeSupport.hpp>
 
+#include "ObstaclesPubSubTypes.hpp"  // Tipo DDS generato da Obstacles.idl
+#include "macros.h"                  // Deve definire GAME_HEIGHT e GAME_WIDTH
+
 using namespace eprosima::fastdds::dds;
-using namespace eprosima::fastdds::rtps;
+using namespace std::chrono_literals;
 
-class CustomTransportPublisher
-{
+FILE* logfile;
+
+class CustomTransportPublisher {
 private:
-
+    // Messaggio DDS (tipo Obstacles definito in Obstacles.idl)
     Obstacles my_message_;
-
     DomainParticipant* participant_;
-
     Publisher* publisher_;
-
     Topic* topic_;
-
     DataWriter* writer_;
-
     TypeSupport type_;
 
-    class PubListener : public DataWriterListener
-    {
+    class PubListener : public DataWriterListener {
     public:
+        std::atomic_int matched_;
+        PubListener() : matched_(0) {}
+        ~PubListener() override {}
 
-        PubListener()
-            : matched_(0)
-        {
-        }
-
-        ~PubListener() override
-        {
-        }
-
-        void on_publication_matched(
-                DataWriter* writer,
-                const PublicationMatchedStatus& info) override
-        {
-            if (info.current_count_change == 1)
-            {
+        void on_publication_matched(DataWriter* writer, const PublicationMatchedStatus& info) override {
+            if (info.current_count_change == 1) {
                 matched_ = info.total_count;
                 std::cout << "Publisher matched." << std::endl;
-                eprosima::fastdds::rtps::LocatorList locators;
-                writer->get_sending_locators(locators);
-                for (const eprosima::fastdds::rtps::Locator& locator : locators)
-                {
-                    print_transport_protocol(locator);
-                }
-
-            }
-            else if (info.current_count_change == -1)
-            {
+                // Eventuale stampa dei trasporti utilizzati può essere aggiunta qui
+            } else if (info.current_count_change == -1) {
                 matched_ = info.total_count;
                 std::cout << "Publisher unmatched." << std::endl;
-            }
-            else
-            {
+            } else {
                 std::cout << info.current_count_change
-                        << " is not a valid value for PublicationMatchedStatus current count change." << std::endl;
+                          << " is not a valid value for PublicationMatchedStatus current count change." << std::endl;
             }
         }
-
-        std::atomic_int matched_;
-        private:
-        void print_transport_protocol(const eprosima::fastdds::rtps::Locator &locator)
-        {
-            switch (locator.kind)
-            {
-            case LOCATOR_KIND_UDPv4:
-                std::cout << "Using UDPv4" << std::endl;
-                break;
-            case LOCATOR_KIND_UDPv6:
-                std::cout << "Using UDPv6" << std::endl;
-                break;
-            case LOCATOR_KIND_SHM:
-                std::cout << "Using Shared Memory" << std::endl;
-                break;
-            default:
-                std::cout << "Unknown Transport" << std::endl;
-                break;
-            }
-        }
-
     } listener_;
 
 public:
-
     CustomTransportPublisher()
         : participant_(nullptr)
         , publisher_(nullptr)
         , topic_(nullptr)
         , writer_(nullptr)
-        , type_(new MyMessagePubSubType())
-    {
-    }
+        , type_(new ObstaclesPubSubType())
+    { }
 
-    virtual ~CustomTransportPublisher()
-    {
-        if (writer_ != nullptr)
-        {
+    virtual ~CustomTransportPublisher() {
+        if (writer_ != nullptr) {
             publisher_->delete_datawriter(writer_);
         }
-        if (publisher_ != nullptr)
-        {
+        if (publisher_ != nullptr) {
             participant_->delete_publisher(publisher_);
         }
-        if (topic_ != nullptr)
-        {
+        if (topic_ != nullptr) {
             participant_->delete_topic(topic_);
         }
         DomainParticipantFactory::get_instance()->delete_participant(participant_);
     }
 
-    //!Initialize the publisher
-    bool init()
-    {
-        my_message_.index(0);
+    //! Inizializza il publisher DDS
+    bool init() {
+        // Imposta un valore iniziale (eventualmente 0) per il campo obstacles_number
+        my_message_.obstacles_number(0);
 
         DomainParticipantQos participantQos;
         participantQos.name("Participant_publisher");
@@ -142,90 +98,140 @@ public:
         // participantQos.transport().user_transports.push_back(shm_transport);
 
         participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
-
-        if (participant_ == nullptr)
-        {
+        if (participant_ == nullptr) {
             return false;
         }
 
-        // Register the Type
+        // Registra il tipo
         type_.register_type(participant_);
 
         // Create the publications Topic
-        topic_ = participant_->create_topic("HelloWorld", type_.get_type_name(), TOPIC_QOS_DEFAULT);
-
-        if (topic_ == nullptr)
-        {
+        topic_ = participant_->create_topic("topic 1", type_.get_type_name(), TOPIC_QOS_DEFAULT);
+        if (topic_ == nullptr) {
             return false;
         }
 
         // Create the Publisher
         publisher_ = participant_->create_publisher(PUBLISHER_QOS_DEFAULT, nullptr);
-
-        if (publisher_ == nullptr)
-        {
+        if (publisher_ == nullptr) {
             return false;
         }
 
         // Create the DataWriter
         writer_ = publisher_->create_datawriter(topic_, DATAWRITER_QOS_DEFAULT, &listener_);
-
-        if (writer_ == nullptr)
-        {
+        if (writer_ == nullptr) {
             return false;
         }
         return true;
     }
 
-    //!Send a publication
-    bool publish()
-    {
-        if (listener_.matched_ > 0)
-        {
-            my_message_.index(my_message_.index() + 1);
-            my_message_.first_number(fRand(0,20));
-            my_message_.second_number(fRand(0,20));
+    // ! Funzione publish_from_grid:
+    // ! Scansiona la griglia (GAME_HEIGHT x GAME_WIDTH) per individuare celle contrassegnate con 'o'
+    //! e compila il messaggio DDS con le coordinate degli ostacoli e il loro numero.
+    bool publish_from_grid(const char grid[GAME_HEIGHT][GAME_WIDTH]) {
+        // Pulisce le sequenze precedenti
+        my_message_.obstacles_x().clear();
+        my_message_.obstacles_y().clear();
+        int count = 0;
+        for (int r = 0; r < GAME_HEIGHT; r++) {
+            for (int c = 0; c < GAME_WIDTH; c++) {
+                if (grid[r][c] == 'o') {
+                    my_message_.obstacles_x().push_back(c);
+                    my_message_.obstacles_y().push_back(r);
+                    count++;
+                }
+            }
+        }
+        my_message_.obstacles_number(count);
+        if (listener_.matched_ > 0) {
             writer_->write(&my_message_);
             return true;
         }
         return false;
     }
 
-    //!Run the Publisher
-    void run(
-            uint32_t samples)
-    {
-        uint32_t samples_sent = 0;
-        while (samples_sent < samples)
-        {
-            if (publish())
-            {
-                samples_sent++;
-                std::cout <<"#1: " << my_message_.first_number()
-                          <<" #2: "<< my_message_.second_number()
-                          <<" Index: " << my_message_.index()
-                          <<" SENT" << std::endl;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        }
-    }
+    //! Funzione run:
+    //! Per il numero di campioni specificato, genera una griglia e crea ostacoli in essa
+    //! (usando la stessa logica di obstacles.c) e pubblica il messaggio DDS tramite publish_from_grid().
+    void run(uint32_t total_obstacles) {
+        // Inizializza il seme per i numeri casuali
+        srand(static_cast<unsigned int>(time(NULL)));
+        // Crea una griglia GAME_HEIGHT x GAME_WIDTH inizializzata a ' '
+        char grid[GAME_HEIGHT][GAME_WIDTH];
+        memset(grid, ' ', sizeof(grid));
 
-    double fRand(double fMin, double fMax)
-    {
-        double f = (double)rand() / RAND_MAX;
-        return fMin + f * (fMax - fMin);
+        while (total_obstacles > 0) {
+            // Genera coordinate casuali (escludendo i bordi)
+            int x = (rand() % (GAME_WIDTH - 2)) + 1;
+            int y = (rand() % (GAME_HEIGHT - 2)) + 1;
+            // Se la cella è vuota e non è il centro, posiziona un ostacolo ('o')
+            if (grid[y][x] == ' ' && !(x == GAME_WIDTH / 2 && y == GAME_HEIGHT / 2)) {
+                grid[y][x] = 'o';
+                total_obstacles--;
+            }
+        }
+
+        // Pubblica il messaggio DDS basato sulla griglia generata
+        if (publish_from_grid(grid)) {
+            std::cout << "Obstacles message published." << std::endl;
+        } else {
+            std::cout << "Publishing failed (no subscribers or no obstacles)." << std::endl;
+        }
     }
 };
 
-int main()
-{
+void signal_triggered(int signum) {
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
+        "Obstacles is active.");
+    fflush(logfile);
+}
+
+// La main rimane semplice come da specifica
+int main(int argc, char* argv[]) {
+    // * Imposta il gestore per SIGUSR1
+    struct sigaction sa1;
+    memset(&sa1, 0, sizeof(sa1));
+    sa1.sa_handler = signal_triggered;
+    sa1.sa_flags = SA_RESTART;
+    if (sigaction(SIGUSR1, &sa1, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+
+    // * Verifica i parametri: ci aspettiamo 2 argomenti oltre al nome del programma
+    //    (Usage: <program> <write_fd> <logfile_fd>)
+    if (argc != 3)
+    {
+        fprintf(stderr, "Usage: %s <read_fd> <write_fd> <logfile_fd>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    // * Parsing del file descriptor per la scrittura (ad esempio, per comunicare con altri processi)
+    int write_fd = atoi(argv[1]);
+    if (write_fd <= 0)
+    {
+        fprintf(stderr, "Invalid write file descriptor: %s\n", argv[1]);
+        return EXIT_FAILURE;
+    }
+
+    // * Parsing del file descriptor per il file di log e apertura del file in modalità append
+    int logfile_fd = atoi(argv[2]);
+    logfile = fdopen(logfile_fd, "a");
+    if (!logfile)
+    {
+        perror("fdopen logfile");
+        return EXIT_FAILURE;
+    }
+
     std::cout << "Starting publisher." << std::endl;
-    uint32_t samples = 10;
+    // Calcola il numero totale di ostacoli da inviare in base alla dimensione della griglia
+    uint32_t total_obstacles = static_cast<int>(GAME_HEIGHT * GAME_WIDTH * 0.001);
 
     CustomTransportPublisher* mypub = new CustomTransportPublisher();
-    if(mypub->init())
-    {
-        mypub->run(samples);
+    if (mypub->init()) {
+        mypub->run(total_obstacles);
     }
 
     delete mypub;
