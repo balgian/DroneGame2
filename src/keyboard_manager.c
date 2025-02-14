@@ -48,6 +48,8 @@ int main(const int argc, char *argv[]) {
         perror("fdopen logfile");
         return EXIT_FAILURE;
     }
+    initscr();
+    noecho();
     while(1){
         char c = getch();
         switch (c) {
@@ -73,6 +75,7 @@ int main(const int argc, char *argv[]) {
                 break;
         }
     }
+    endwin();
 
     close(write_fd);
     return EXIT_SUCCESS;

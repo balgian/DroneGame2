@@ -19,11 +19,14 @@
 #include <fastdds/dds/publisher/DataWriterListener.hpp>
 #include <fastdds/dds/publisher/Publisher.hpp>
 #include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/rtps/transport/TCPv4TransportDescriptor.hpp>
+#include <fastdds/utils/IPLocator.hpp>
 
 #include "TargetsPubSubTypes.hpp"  // Tipo DDS generato da Targets.idl
 #include "macros.h"                // Deve definire GAME_HEIGHT e GAME_WIDTH
 
 using namespace eprosima::fastdds::dds;
+using namespace eprosima::fastdds::rtps;
 using namespace std::chrono_literals;
 
 // Puntatore globale al file di log
@@ -49,7 +52,6 @@ private:
         void on_publication_matched(DataWriter* writer, const PublicationMatchedStatus& info) override {
             if (info.current_count_change == 1) {
                 matched_ = info.total_count;
-                std::cout << "Publisher matched." << std::endl;
             } else if (info.current_count_change == -1) {
                 matched_ = info.total_count;
                 std::cout << "Publisher unmatched." << std::endl;
@@ -83,34 +85,52 @@ public:
     }
 
     //! Inizializza il publisher DDS
-    bool init() {
-        // Imposta un valore iniziale per targets_number
+bool init() {
         my_message_.targets_number(0);
 
         DomainParticipantQos participantQos;
-        participantQos.name("Participant_targets");
+        participantQos.name("Participant_publisher");
+        /*
+        // Disable built-in transports
+        participantQos.transport().use_builtin_transports = false;
 
+        // Create and configure the TCP transport.
+        // Use new with std::shared_ptr if needed.
+        std::shared_ptr<TCPv4TransportDescriptor> tcp_transport(
+            new TCPv4TransportDescriptor());
+        tcp_transport->add_listener_port(5100);
+        // Set the WAN address (public address) and specify local interface
+        tcp_transport->set_WAN_address("127.0.0.1");
+        tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
+        //participantQos.transport().user_transports.push_back(tcp_transport);
+
+        // Configure discovery in SERVER mode:
+        //participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
+        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = eprosima::fastdds::rtps::DiscoveryProtocol::SERVER;
+        // Instead of using m_ServerListeningAddresses (which is not supported),
+        // set a locator into m_DiscoveryServers.
+        Locator_t server_locator;
+        IPLocator::setIPv4(server_locator, 127, 0, 0, 1);
+        server_locator.port = 11811;
+        //participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
+        */
         participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
         if (participant_ == nullptr) {
+            std::cerr << "Failed to create DomainParticipant with TCP/Discovery configuration in Targets generator" << std::endl;
             return false;
         }
 
-        // Registra il tipo DDS
-        type_.register_type(participant_);
-
-        // Crea il topic
-        topic_ = participant_->create_topic("topic 2", type_.get_type_name(), TOPIC_QOS_DEFAULT);
+        type_.register_type(participant_, "Targets");
+        topic_ = participant_->create_topic("topic 2", "Targets", TOPIC_QOS_DEFAULT);
         if (topic_ == nullptr) {
             return false;
         }
 
-        // Crea il Publisher
         publisher_ = participant_->create_publisher(PUBLISHER_QOS_DEFAULT, nullptr);
         if (publisher_ == nullptr) {
             return false;
         }
 
-        // Crea il DataWriter
         writer_ = publisher_->create_datawriter(topic_, DATAWRITER_QOS_DEFAULT, &listener_);
         if (writer_ == nullptr) {
             return false;
@@ -128,7 +148,6 @@ public:
         int count = 0;
         for (int r = 0; r < GAME_HEIGHT; r++) {
             for (int c = 0; c < GAME_WIDTH; c++) {
-                // Considera come target ogni cella non vuota, escluse eventuali condizioni particolari
                 if ((grid[r][c] >= '0' && grid[r][c] <= '9')) {
                     my_message_.targets_x().push_back(c);
                     my_message_.targets_y().push_back(r);
@@ -137,15 +156,23 @@ public:
             }
         }
         my_message_.targets_number(count);
-        if (listener_.matched_ > 0) {
-            writer_->write(&my_message_);
-            return true;
+
+        int flag = 0;
+        while (!flag) {
+            if (listener_.matched_ > 0) {
+                writer_->write(&my_message_);
+                eprosima::fastdds::dds::Duration_t timeout;
+                timeout.seconds = 5;
+                timeout.nanosec = 0;
+                writer_->wait_for_acknowledgments(timeout);
+                flag = 1;
+            }
         }
-        return false;
+        return true;
     }
 
     void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
-        // Genera i target: inserisce cifre decrescenti da '9' a '1'
+        // Genera i target: inserisce cifre decrescenti da '9' a '0'
         srand(static_cast<unsigned int>(time(NULL)));
         char num_target = '9';
         while (num_target > '0') {
@@ -157,17 +184,10 @@ public:
                 num_target--;
             }
         }
-
-        // Pubblica il messaggio DDS basato sulla griglia modificata
-        if (publish_from_grid(grid)) {
-            std::cout << "Targets message published." << std::endl;
-        } else {
-            std::cout << "Publishing failed (no subscribers or no targets)." << std::endl;
-        }
+        publish_from_grid(grid);
     }
 };
 
-// Handler per il segnale SIGUSR1: scrive un messaggio di log con timestamp e PID
 void signal_triggered(int signum) {
     time_t now = time(NULL);
     struct tm* t = localtime(&now);
@@ -176,7 +196,6 @@ void signal_triggered(int signum) {
     fflush(logfile);
 }
 
-// La main
 int main(int argc, char* argv[]) {
     // * Imposta il gestore per SIGUSR1
     struct sigaction sa1;
@@ -188,8 +207,6 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // * Verifica i parametri: il programma si aspetta 3 argomenti oltre al nome
-    //    Usage: <program> <read_fd> <logfile_fd>
     if (argc != 3) {
         fprintf(stderr, "Usage: %s <read_fd> <logfile_fd>\n", argv[0]);
         return EXIT_FAILURE;
@@ -197,7 +214,7 @@ int main(int argc, char* argv[]) {
 
     int read_fd = atoi(argv[1]);
     if (read_fd <= 0) {
-        fprintf(stderr, "Invalid read file descriptor TARGET: %s\n", argv[1]);
+        fprintf(stderr, "Invalid read file descriptor: %s\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -214,8 +231,6 @@ int main(int argc, char* argv[]) {
         perror("read");
         return EXIT_FAILURE;
     }
-
-    // Inizializza il publisher DDS per Targets e avvia il run passando i file descriptor
     CustomTargetsPublisher* mypub = new CustomTargetsPublisher();
     if (mypub->init()) {
         mypub->run(grid);
@@ -224,7 +239,6 @@ int main(int argc, char* argv[]) {
     }
     delete mypub;
 
-    // Chiude i pipe
     close(read_fd);
 
     return 0;

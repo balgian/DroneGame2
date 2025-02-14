@@ -10,71 +10,105 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include <string.h>
-
-int get_random_interval(int min, int max);
-long long get_log_timestamp_from_FILE(FILE *file);
+#include <stdio.h>
+#include "macros.h"
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        perror("Usage: Watchdog <process_group_id> <logfile_fd>");
+    // * Check if the number of argument correspond
+    if (argc != NUM_CHILD_PROCESSES + 1) {
+        fprintf(stderr, "Usage: %s <child_pid_1> ... <child_pid_%d> <blackboard_pid> <logfile_fd>\n",
+                argv[0], NUM_CHILD_PROCESSES - 2);
         exit(EXIT_FAILURE);
     }
-
-    // * Parse the PGID
-    pid_t pgid = (pid_t) atoi(argv[1]);
-    if (pgid <= 0) {
-        perror("Invalid PGID");
+    // * Parse dei PID dei processi figli
+    const int num_child_pids = NUM_CHILD_PROCESSES - 2;
+    pid_t child_pids[num_child_pids];
+    for (int i = 0; i < num_child_pids; i++) {
+        child_pids[i] = (pid_t) atoi(argv[i + 1]);
+        if (child_pids[i] <= 0) {
+            fprintf(stderr, "Invalid child PID: %s\n", argv[i + 1]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    // * Parse del PID del processo blackboard
+    pid_t blackboard_pid = (pid_t) atoi(argv[num_child_pids + 1]);
+    if (blackboard_pid <= 0) {
+        fprintf(stderr, "Invalid blackboard PID: %s\n", argv[num_child_pids + 1]);
         exit(EXIT_FAILURE);
     }
-    // Parse logfile file descriptor and open it
-    int logfile_fd = atoi(argv[2]);
+    // * Parse del file descriptor del logfile e apertura del file stream
+    int logfile_fd = atoi(argv[num_child_pids + 2]);
     FILE *logfile = fdopen(logfile_fd, "r");
     if (!logfile) {
         perror("fdopen logfile");
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
-    srand(time(NULL) ^ getpid());
+    // * Initialise the timestamp for each process
+    time_t last_active_time_p[num_child_pids];
+    for (int i = 0; i < num_child_pids; i++) {
+        last_active_time_p[i] = time(NULL);
+    }
+    time_t last_active_time_balckboard = time(NULL);
+    int dt = 10;
     while (1) {
-        time_t mod_before = get_log_timestamp_from_FILE(logfile);
-
-        // Invia SIGUSR1 al gruppo di processi (PGID negativo)
-        if (kill(-pgid, SIGUSR1) == -1) {
-            perror("kill(SIGUSR1)");
-            sleep(10);
+        // * Sleep before to repeat the cycle
+        sleep(3);
+        // * Send the signals
+        for (int i = 0; i < num_child_pids; i++) {
+            if (kill(child_pids[i], SIGUSR1) == 0) {
+                last_active_time_p[i] = time(NULL);
+            }
+        }
+        if (kill(blackboard_pid, SIGUSR1) == 0) {
+            last_active_time_balckboard = time(NULL);
+        }
+        // * Verify the processes' time inactivity
+        for (int i = 0; i < num_child_pids; i++) {
+            time_t now = time(NULL);
+            if (difftime(now, last_active_time_p[i]) > dt) {
+                for (int j = 0; j < num_child_pids; j++) {
+                    kill(child_pids[j], SIGTERM);
+                }
+                kill(blackboard_pid, SIGTERM);
+                exit(EXIT_FAILURE);
+            }
+        }
+        time_t now = time(NULL);
+        if (difftime(now, last_active_time_balckboard) > dt) {
+            for (int j = 0; j < num_child_pids; j++) {
+                kill(child_pids[j], SIGTERM);
+            }
+            kill(blackboard_pid, SIGTERM);
             exit(EXIT_FAILURE);
         }
+        /*
+        for (int i = 0; i < num_child_pids; i++) {
+            if (kill(child_pids[i], 0) == -1) {
+                if (errno == ESRCH) {
+                    for (int j = 0; j < num_child_pids; j++) {
+                        kill(child_pids[j], SIGTERM);
+                    }
+                    kill(blackboard_pid, SIGTERM);
+                    exit(EXIT_SUCCESS);
+                }
+                if (errno == EPERM) {
 
-        // Attendi un intervallo per dare tempo ai processi di reagire
-        sleep(get_random_interval(4, 10));
-
-        // Rileva il nuovo timestamp
-        long long mod_after = get_log_timestamp_from_FILE(logfile);
-        if (mod_after <= mod_before) {
-            fprintf(stderr, "No response, quit. Group: %d\n", pgid);
-            kill(-pgid, SIGTERM);
-            sleep(2);
-            kill(-pgid, SIGKILL);
-            break;
+                }
+            }
         }
-    }
-    return 0;
-}
+        if (kill(blackboard_pid, 0) == -1) {
+            if (errno == ESRCH) {
+                for (int j = 0; j < num_child_pids; j++) {
+                    kill(child_pids[j], SIGTERM);
+                }
+                kill(blackboard_pid, SIGTERM);
+                exit(EXIT_SUCCESS);
+            }
+            if (errno == EPERM) {
 
-int get_random_interval(int min, int max) {
-    return min + rand() % (max - min + 1);
-}
-
-long long get_log_timestamp_from_FILE(FILE *file) {
-    struct stat file_stat;
-    int fd = fileno(file);
-    if (fstat(fd, &file_stat) == 0) {
-#ifdef __linux__
-        // Usa st_mtim per avere risoluzione in nanosecondi
-        return (long long) file_stat.st_mtim.tv_sec * 1000000000LL + file_stat.st_mtim.tv_nsec;
-#else
-        return file_stat.st_mtime; // Fallback su altri sistemi
-#endif
+            }
+        }*/
     }
-    return 0;
+
+    return EXIT_SUCCESS;
 }

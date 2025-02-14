@@ -4,13 +4,13 @@
 
 /*
 * - Keyboard input manager (write to Blackboard -> 1 pipe)
-* - Obstacle generator (read & write -> 2 pipes)
-* - Target generators (read & write -> 2 pipes)
-* - Drone dynamics process (read & write -> 2 pipes)
+* - Obstacles generator (write to Targets -> 1 pipe)
+* - Targets generator (read from Obstacles -> same pipe of Obstacles)
+* - Drone dynamics process (read & write from/to Blackboard-> 2 pipes)
 *
-* Total: 7 pipes
+* Total: 4 pipes
 */
-#define NUM_CHILD_PIPES 3
+#define NUM_CHILD_PIPES 4
 #define NUM_CHILD_PROCESSES 6
 
 #define INSPECTOR_FIFO "/tmp/inspector_fifo"

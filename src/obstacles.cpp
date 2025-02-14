@@ -21,11 +21,14 @@
 #include <fastdds/dds/publisher/DataWriterListener.hpp>
 #include <fastdds/dds/publisher/Publisher.hpp>
 #include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/rtps/transport/TCPv4TransportDescriptor.hpp>
+#include <fastdds/utils/IPLocator.hpp>
 
 #include "ObstaclesPubSubTypes.hpp"  // Tipo DDS generato da Obstacles.idl
 #include "macros.h"                  // Deve definire GAME_HEIGHT e GAME_WIDTH
 
 using namespace eprosima::fastdds::dds;
+using namespace eprosima::fastdds::rtps;
 using namespace std::chrono_literals;
 
 FILE* logfile;
@@ -49,8 +52,6 @@ private:
         void on_publication_matched(DataWriter* writer, const PublicationMatchedStatus& info) override {
             if (info.current_count_change == 1) {
                 matched_ = info.total_count;
-                std::cout << "Publisher matched." << std::endl;
-                // Eventuale stampa dei trasporti utilizzati può essere aggiunta qui
             } else if (info.current_count_change == -1) {
                 matched_ = info.total_count;
                 std::cout << "Publisher unmatched." << std::endl;
@@ -84,40 +85,52 @@ public:
     }
 
     //! Inizializza il publisher DDS
-    bool init() {
-        // Imposta un valore iniziale (eventualmente 0) per il campo obstacles_number
+bool init() {
         my_message_.obstacles_number(0);
 
         DomainParticipantQos participantQos;
         participantQos.name("Participant_publisher");
+        /*
+        // Disable built-in transports
+        participantQos.transport().use_builtin_transports = false;
 
-        // // Explicit configuration of shm transport
-        // participantQos.transport().use_builtin_transports = false;
-        // auto shm_transport = std::make_shared<SharedMemTransportDescriptor>();
-        // shm_transport->segment_size(10 * 1024 * 1024);
-        // participantQos.transport().user_transports.push_back(shm_transport);
+        // Create and configure the TCP transport.
+        // Use new with std::shared_ptr if needed.
+        std::shared_ptr<TCPv4TransportDescriptor> tcp_transport(
+            new TCPv4TransportDescriptor());
+        tcp_transport->add_listener_port(5100);
+        // Set the WAN address (public address) and specify local interface
+        tcp_transport->set_WAN_address("127.0.0.1");
+        tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
+        //participantQos.transport().user_transports.push_back(tcp_transport);
 
+        // Configure discovery in SERVER mode:
+        //participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
+        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = eprosima::fastdds::rtps::DiscoveryProtocol::SERVER;
+        // Instead of using m_ServerListeningAddresses (which is not supported),
+        // set a locator into m_DiscoveryServers.
+        Locator_t server_locator;
+        IPLocator::setIPv4(server_locator, 127, 0, 0, 1);
+        server_locator.port = 11811;
+        //participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
+        */
         participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
         if (participant_ == nullptr) {
+            std::cerr << "Failed to create DomainParticipant with TCP/Discovery configuration in Obstacles generator" << std::endl;
             return false;
         }
 
-        // Registra il tipo
-        type_.register_type(participant_);
-
-        // Create the publications Topic
-        topic_ = participant_->create_topic("topic 1", type_.get_type_name(), TOPIC_QOS_DEFAULT);
+        type_.register_type(participant_, "Obstacles");
+        topic_ = participant_->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
         if (topic_ == nullptr) {
             return false;
         }
 
-        // Create the Publisher
         publisher_ = participant_->create_publisher(PUBLISHER_QOS_DEFAULT, nullptr);
         if (publisher_ == nullptr) {
             return false;
         }
 
-        // Create the DataWriter
         writer_ = publisher_->create_datawriter(topic_, DATAWRITER_QOS_DEFAULT, &listener_);
         if (writer_ == nullptr) {
             return false;
@@ -125,9 +138,6 @@ public:
         return true;
     }
 
-    // ! Funzione publish_from_grid:
-    // ! Scansiona la griglia (GAME_HEIGHT x GAME_WIDTH) per individuare celle contrassegnate con 'o'
-    //! e compila il messaggio DDS con le coordinate degli ostacoli e il loro numero.
     bool publish_from_grid(const char grid[GAME_HEIGHT][GAME_WIDTH]) {
         // Pulisce le sequenze precedenti
         my_message_.obstacles_x().clear();
@@ -143,20 +153,25 @@ public:
             }
         }
         my_message_.obstacles_number(count);
-        if (listener_.matched_ > 0) {
-            writer_->write(&my_message_);
-            return true;
+
+        int flag = 0;
+        while (!flag) {
+            if (listener_.matched_ > 0) {
+                writer_->write(&my_message_);
+                eprosima::fastdds::dds::Duration_t timeout;
+                timeout.seconds = 5;
+                timeout.nanosec = 0;
+                writer_->wait_for_acknowledgments(timeout);
+                flag = 1;
+            }
         }
-        return false;
+        return true;
     }
 
-    //! Funzione run:
-    //! Per il numero di campioni specificato, genera una griglia e crea ostacoli in essa
-    //! (usando la stessa logica di obstacles.c) e pubblica il messaggio DDS tramite publish_from_grid().
-    void run(uint32_t total_obstacles) {
+    void run(uint32_t total_obstacles, int write_fd) {
         // Inizializza il seme per i numeri casuali
         srand(static_cast<unsigned int>(time(NULL)));
-        // Crea una griglia GAME_HEIGHT x GAME_WIDTH inizializzata a ' '
+        // Crea una griglia GAME_HEIGHT x GAME_WIDTH
         char grid[GAME_HEIGHT][GAME_WIDTH];
         memset(grid, ' ', sizeof(grid));
 
@@ -170,12 +185,10 @@ public:
                 total_obstacles--;
             }
         }
-
-        // Pubblica il messaggio DDS basato sulla griglia generata
-        if (publish_from_grid(grid)) {
-            std::cout << "Obstacles message published." << std::endl;
-        } else {
-            std::cout << "Publishing failed (no subscribers or no obstacles)." << std::endl;
+        publish_from_grid(grid);
+        if (write(write_fd, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
+            perror("write");
+            EXIT_FAILURE;
         }
     }
 };
@@ -188,7 +201,6 @@ void signal_triggered(int signum) {
     fflush(logfile);
 }
 
-// La main rimane semplice come da specifica
 int main(int argc, char* argv[]) {
     // * Imposta il gestore per SIGUSR1
     struct sigaction sa1;
@@ -199,15 +211,12 @@ int main(int argc, char* argv[]) {
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
-
     // * Verifica i parametri: ci aspettiamo 2 argomenti oltre al nome del programma
-    //    (Usage: <program> <write_fd> <logfile_fd>)
     if (argc != 3)
     {
-        fprintf(stderr, "Usage: %s <read_fd> <write_fd> <logfile_fd>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <write_fd> <logfile_fd>\n", argv[0]);
         return EXIT_FAILURE;
     }
-
     // * Parsing del file descriptor per la scrittura (ad esempio, per comunicare con altri processi)
     int write_fd = atoi(argv[1]);
     if (write_fd <= 0)
@@ -215,7 +224,6 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Invalid write file descriptor: %s\n", argv[1]);
         return EXIT_FAILURE;
     }
-
     // * Parsing del file descriptor per il file di log e apertura del file in modalità append
     int logfile_fd = atoi(argv[2]);
     logfile = fdopen(logfile_fd, "a");
@@ -225,14 +233,13 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    std::cout << "Starting publisher." << std::endl;
-    // Calcola il numero totale di ostacoli da inviare in base alla dimensione della griglia
     uint32_t total_obstacles = static_cast<int>(GAME_HEIGHT * GAME_WIDTH * 0.001);
 
     CustomTransportPublisher* mypub = new CustomTransportPublisher();
     if (mypub->init()) {
-        mypub->run(total_obstacles);
+        mypub->run(total_obstacles, write_fd);
     }
+
 
     delete mypub;
     return 0;
