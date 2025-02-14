@@ -88,35 +88,38 @@ public:
 bool init() {
         my_message_.obstacles_number(0);
 
+        using namespace eprosima::fastdds::dds;
+        using namespace eprosima::fastdds::rtps;
+
         DomainParticipantQos participantQos;
-        participantQos.name("Participant_publisher");
-        /*
-        // Disable built-in transports
+        participantQos.name("Obstacle_Server");
+
+        // Disabilito i trasporti built-in (UDP, SHM, ecc.)
         participantQos.transport().use_builtin_transports = false;
 
-        // Create and configure the TCP transport.
-        // Use new with std::shared_ptr if needed.
-        std::shared_ptr<TCPv4TransportDescriptor> tcp_transport(
-            new TCPv4TransportDescriptor());
+        // Configuro il trasporto TCP
+        auto tcp_transport = std::make_shared<TCPv4TransportDescriptor>();
         tcp_transport->add_listener_port(5100);
-        // Set the WAN address (public address) and specify local interface
-        tcp_transport->set_WAN_address("127.0.0.1");
         tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
-        //participantQos.transport().user_transports.push_back(tcp_transport);
+        tcp_transport->set_WAN_address("127.0.0.1");
+        participantQos.transport().user_transports.push_back(tcp_transport);
 
-        // Configure discovery in SERVER mode:
-        //participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
-        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = eprosima::fastdds::rtps::DiscoveryProtocol::SERVER;
-        // Instead of using m_ServerListeningAddresses (which is not supported),
-        // set a locator into m_DiscoveryServers.
+        // SERVER mode
+        participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
+        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
+        participantQos.wire_protocol().participant_id = 1;
+
+        // Dico su quale porto *metatraffic* resto in ascolto. Esempio: 11811
         Locator_t server_locator;
         IPLocator::setIPv4(server_locator, 127, 0, 0, 1);
         server_locator.port = 11811;
-        //participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
-        */
-        participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
-        if (participant_ == nullptr) {
-            std::cerr << "Failed to create DomainParticipant with TCP/Discovery configuration in Obstacles generator" << std::endl;
+        participantQos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(server_locator);
+
+        // Creo il Participant
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(0, participantQos);
+        if (!participant_)
+        {
+            std::cerr << "Failed to create DomainParticipant (SERVER) in Obstacles" << std::endl;
             return false;
         }
 

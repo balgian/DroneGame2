@@ -44,131 +44,276 @@ using namespace std::chrono_literals;
 
 FILE *logfile;
 
-class ObstaclesListener : public DataReaderListener {
+class ObstaclesListener : public eprosima::fastdds::dds::DataReaderListener
+{
 public:
     std::atomic_int samples_;
     Obstacles obstacles_msg_;
-    ObstaclesListener() : samples_(0) {}
-    ~ObstaclesListener() override {}
 
-    void on_subscription_matched(DataReader* reader, const SubscriptionMatchedStatus &info) override
+    ObstaclesListener() : samples_(0) {}
+    ~ObstaclesListener() override = default;
+
+    void on_subscription_matched(
+            eprosima::fastdds::dds::DataReader*,
+            const eprosima::fastdds::dds::SubscriptionMatchedStatus &info) override
     {
-        /*if (info.current_count_change == 1)
+        // Puoi inserire dei log se vuoi
+        /*
+        if (info.current_count_change == 1)
         {
-            std::cout << "Obstacles Subscriber matched." << std::endl;
+            std::cout << "[ObstaclesListener] Subscriber matched." << std::endl;
         }
         else if (info.current_count_change == -1)
         {
-            std::cout << "Obstacles Subscriber unmatched." << std::endl;
-        }*/
+            std::cout << "[ObstaclesListener] Subscriber unmatched." << std::endl;
+        }
+        */
     }
 
-    void on_data_available(DataReader* reader) override {
-        SampleInfo info;
-        if (reader->take_next_sample(&obstacles_msg_, &info) == RETCODE_OK)
+    void on_data_available(eprosima::fastdds::dds::DataReader* reader) override
+    {
+        eprosima::fastdds::dds::SampleInfo info;
+        if (reader->take_next_sample(&obstacles_msg_, &info) == eprosima::fastdds::dds::RETCODE_OK)
         {
             if (info.valid_data)
             {
                 samples_++;
-                /*std::cout << "Obstacles Sample #" << samples_ << ": "
-                          << "Number of obstacles: " << obstacles_msg_.obstacles_number() << std::endl;
-                const auto & xs = obstacles_msg_.obstacles_x();
-                const auto & ys = obstacles_msg_.obstacles_y();
-                for (size_t i = 0; i < xs.size(); i++)
-                {
-                    std::cout << "  (" << xs[i] << ", " << ys[i] << ")";
-                }
-                std::cout << std::endl;*/
+                // LOG o elaborazione interna degli ostacoli
+                /*
+                std::cout << "[ObstaclesListener] Sample #" << samples_
+                          << " - N. ostacoli: "
+                          << obstacles_msg_.obstacles_number() << std::endl;
+                */
             }
         }
     }
 };
 
-class TargetsListener : public DataReaderListener
+class TargetsListener : public eprosima::fastdds::dds::DataReaderListener
 {
 public:
     std::atomic_int samples_;
     Targets targets_msg_;
 
-    TargetsListener() : samples_(0) { }
-    ~TargetsListener() override { }
+    TargetsListener() : samples_(0) {}
+    ~TargetsListener() override = default;
 
-    void on_subscription_matched(DataReader* reader, const SubscriptionMatchedStatus &info) override {
-        /*if (info.current_count_change == 1)
+    void on_subscription_matched(
+            eprosima::fastdds::dds::DataReader*,
+            const eprosima::fastdds::dds::SubscriptionMatchedStatus &info) override
+    {
+        // Puoi inserire dei log se vuoi
+        /*
+        if (info.current_count_change == 1)
         {
-            std::cout << "Targets Subscriber matched." << std::endl;
+            std::cout << "[TargetsListener] Subscriber matched." << std::endl;
         }
         else if (info.current_count_change == -1)
         {
-            std::cout << "Targets Subscriber unmatched." << std::endl;
-        }*/
+            std::cout << "[TargetsListener] Subscriber unmatched." << std::endl;
+        }
+        */
     }
 
-    void on_data_available(DataReader* reader) override
+    void on_data_available(eprosima::fastdds::dds::DataReader* reader) override
     {
-        SampleInfo info;
-        if (reader->take_next_sample(&targets_msg_, &info) == RETCODE_OK)
+        eprosima::fastdds::dds::SampleInfo info;
+        if (reader->take_next_sample(&targets_msg_, &info) == eprosima::fastdds::dds::RETCODE_OK)
         {
             if (info.valid_data)
             {
                 samples_++;
-                /*std::cout << "Targets Sample #" << samples_ << ": "
-                           << "Number of targets: " << targets_msg_.targets_number() << std::endl;
-                const auto & xs = targets_msg_.targets_x();
-                const auto & ys = targets_msg_.targets_y();
-                for (size_t i = 0; i < xs.size(); i++)
-                {
-                     std::cout << "  (" << xs[i] << ", " << ys[i] << ")";
-                }
-                std::cout << std::endl;*/
+                // LOG o elaborazione interna dei target
+                /*
+                std::cout << "[TargetsListener] Sample #" << samples_
+                          << " - N. targets: "
+                          << targets_msg_.targets_number() << std::endl;
+                */
             }
         }
     }
 };
 
-class CustomTransportSubscriber {
+class ObstaclesSubscriber
+{
 private:
-    DomainParticipant *participant_;
-    Subscriber *subscriber_;
+    eprosima::fastdds::dds::DomainParticipant* participant_;
+    eprosima::fastdds::dds::Subscriber*        subscriber_;
+    eprosima::fastdds::dds::Topic*             obstacles_topic_;
+    eprosima::fastdds::dds::DataReader*        obstacles_reader_;
 
-    // Topics e DataReaders per Obstacles e Targets
-    Topic *obstacles_topic_;
-    DataReader *obstacles_reader_;
-    Topic *targets_topic_;
-    DataReader *targets_reader_;
+    // TypeSupport per Obstacles
+    eprosima::fastdds::dds::TypeSupport obstacles_type_;
 
-    // * TypeSupport two types
-    TypeSupport obstacles_type_;
-    TypeSupport targets_type_;
-
+    // Listener specifico per Obstacles
     ObstaclesListener obstacles_listener_;
-    TargetsListener targets_listener_;
 
 public:
-    CustomTransportSubscriber()
+    ObstaclesSubscriber()
         : participant_(nullptr)
         , subscriber_(nullptr)
         , obstacles_topic_(nullptr)
         , obstacles_reader_(nullptr)
-        , targets_topic_(nullptr)
-        , targets_reader_(nullptr)
         , obstacles_type_(new ObstaclesPubSubType())
-        , targets_type_(new TargetsPubSubType())
-    { }
+    {
+    }
 
-    virtual ~CustomTransportSubscriber()
+    virtual ~ObstaclesSubscriber()
     {
         if (obstacles_reader_ != nullptr)
         {
             subscriber_->delete_datareader(obstacles_reader_);
         }
-        if (targets_reader_ != nullptr)
-        {
-            subscriber_->delete_datareader(targets_reader_);
-        }
         if (obstacles_topic_ != nullptr)
         {
             participant_->delete_topic(obstacles_topic_);
+        }
+        if (subscriber_ != nullptr)
+        {
+            participant_->delete_subscriber(subscriber_);
+        }
+        if (participant_ != nullptr)
+        {
+            eprosima::fastdds::dds::DomainParticipantFactory::get_instance()->
+                delete_participant(participant_);
+        }
+    }
+
+    bool init()
+    {
+        using namespace eprosima::fastdds::dds;
+        using namespace eprosima::fastdds::rtps;
+
+        DomainParticipantQos participantQos;
+        participantQos.name("Obstacle_Subscriber");
+
+        participantQos.transport().use_builtin_transports = false;
+
+        auto tcp_transport = std::make_shared<TCPv4TransportDescriptor>();
+        tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
+        tcp_transport->set_WAN_address("127.0.0.1");
+        participantQos.transport().user_transports.push_back(tcp_transport);
+
+        // Modalità CLIENT
+        participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
+        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
+
+        // Aggiunge il server ostacoli (127.0.0.1:11811)
+        Locator_t server_locator;
+        IPLocator::setIPv4(server_locator, 127, 0, 0, 1);
+        server_locator.port = 11811;
+        participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
+
+        // Crea il DomainParticipant
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(0, participantQos);
+        if (participant_ == nullptr)
+        {
+            std::cerr << "[ObstaclesSubscriber] Errore creazione DomainParticipant" << std::endl;
+            return false;
+        }
+
+        // Registra il tipo "Obstacles"
+        obstacles_type_.register_type(participant_, "Obstacles");
+
+        // Crea il Topic (nome: "topic 1")
+        obstacles_topic_ = participant_->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
+        if (obstacles_topic_ == nullptr)
+        {
+            std::cerr << "[ObstaclesSubscriber] Errore creazione topic per Obstacles" << std::endl;
+            return false;
+        }
+
+        // Crea lo Subscriber
+        subscriber_ = participant_->create_subscriber(SUBSCRIBER_QOS_DEFAULT, nullptr);
+        if (subscriber_ == nullptr)
+        {
+            std::cerr << "[ObstaclesSubscriber] Errore creazione subscriber" << std::endl;
+            return false;
+        }
+
+        // Crea il DataReader per Obstacles
+        obstacles_reader_ = subscriber_->create_datareader(
+            obstacles_topic_,
+            DATAREADER_QOS_DEFAULT,
+            &obstacles_listener_);
+        if (obstacles_reader_ == nullptr)
+        {
+            std::cerr << "[ObstaclesSubscriber] Errore creazione datareader per Obstacles" << std::endl;
+            return false;
+        }
+
+        std::cout << "[ObstaclesSubscriber] Inizializzato correttamente!" << std::endl;
+        return true;
+    }
+
+    void run(char grid[GAME_HEIGHT][GAME_WIDTH])
+    {
+        // Attende finché non viene ricevuto almeno un messaggio
+        while (obstacles_listener_.samples_ == 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        // Recupera i vettori con le coordinate
+        std::vector<int> obs_x = obstacles_listener_.obstacles_msg_.obstacles_x();
+        std::vector<int> obs_y = obstacles_listener_.obstacles_msg_.obstacles_y();
+
+        if (obs_x.empty() || obs_y.empty()) return; // Nessun ostacolo valido
+
+        // Calcolo min e max per x e y
+        int min_obs_x = *std::min_element(obs_x.begin(), obs_x.end());
+        int max_obs_x = *std::max_element(obs_x.begin(), obs_x.end());
+        int min_obs_y = *std::min_element(obs_y.begin(), obs_y.end());
+        int max_obs_y = *std::max_element(obs_y.begin(), obs_y.end());
+
+        // Evita divisioni per zero
+        int range_obs_x = (max_obs_x - min_obs_x) > 0 ? (max_obs_x - min_obs_x) : 1;
+        int range_obs_y = (max_obs_y - min_obs_y) > 0 ? (max_obs_y - min_obs_y) : 1;
+
+        // Posiziona gli ostacoli sulla griglia
+        for (size_t i = 0; i < obs_x.size(); i++)
+        {
+            int new_x = (GAME_WIDTH * (obs_x[i] - min_obs_x)) / range_obs_x;
+            int new_y = (GAME_HEIGHT * (obs_y[i] - min_obs_y)) / range_obs_y;
+
+            new_x = std::clamp(new_x, 0, GAME_WIDTH - 1);
+            new_y = std::clamp(new_y, 0, GAME_HEIGHT - 1);
+
+            // Segna l'ostacolo con 'o'
+            grid[new_y][new_x] = 'o';
+        }
+    }
+};
+
+class TargetsSubscriber
+{
+private:
+    eprosima::fastdds::dds::DomainParticipant* participant_;
+    eprosima::fastdds::dds::Subscriber*        subscriber_;
+    eprosima::fastdds::dds::Topic*             targets_topic_;
+    eprosima::fastdds::dds::DataReader*        targets_reader_;
+
+    // TypeSupport per Targets
+    eprosima::fastdds::dds::TypeSupport targets_type_;
+
+    // Listener specifico per Targets
+    TargetsListener targets_listener_;
+
+public:
+    TargetsSubscriber()
+        : participant_(nullptr)
+        , subscriber_(nullptr)
+        , targets_topic_(nullptr)
+        , targets_reader_(nullptr)
+        , targets_type_(new TargetsPubSubType())
+    {
+    }
+
+    virtual ~TargetsSubscriber()
+    {
+        if (targets_reader_ != nullptr)
+        {
+            subscriber_->delete_datareader(targets_reader_);
         }
         if (targets_topic_ != nullptr)
         {
@@ -178,76 +323,129 @@ public:
         {
             participant_->delete_subscriber(subscriber_);
         }
-        DomainParticipantFactory::get_instance()->delete_participant(participant_);
+        if (participant_ != nullptr)
+        {
+            eprosima::fastdds::dds::DomainParticipantFactory::get_instance()->
+                delete_participant(participant_);
+        }
     }
 
-    //! Inizializza il subscriber per entrambi i topic.
-    bool init() {
+    bool init()
+    {
+        using namespace eprosima::fastdds::dds;
+        using namespace eprosima::fastdds::rtps;
+
         DomainParticipantQos participantQos;
-        participantQos.name("Participant_subscriber");
-        /*
-        // Disabilita i trasporti built-in (default UDP, shared memory, ecc.)
+        participantQos.name("Targets_Subscriber");
+
         participantQos.transport().use_builtin_transports = false;
 
-        // Crea e configura il trasporto TCP
-        auto tcp_transport = std::make_shared<eprosima::fastdds::rtps::TCPv4TransportDescriptor>();
-        // Imposta send/receive buffer in modo che siano maggiori di maxMessageSize
-        tcp_transport->add_listener_port(5100);
-        // Specifica l'interfaccia (la "white list") su cui il trasporto deve mettersi in ascolto
+        auto tcp_transport = std::make_shared<TCPv4TransportDescriptor>();
+        // Evita la stessa porta del server
+        // tcp_transport->add_listener_port(6002); // oppure non metterla
         tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
-        // Specifica anche il WAN address, in modo che il Discovery Server sappia dove contattare questo participant
         tcp_transport->set_WAN_address("127.0.0.1");
-        tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
         participantQos.transport().user_transports.push_back(tcp_transport);
 
-        // Configura il discovery per utilizzare il Discovery Server in modalità CLIENT
         participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
-        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = eprosima::fastdds::rtps::DiscoveryProtocol::CLIENT;
+        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
 
-        // Specifica l'indirizzo del Discovery Server (assicurati che il Discovery Server sia attivo su 127.0.0.1:11811)
-        eprosima::fastdds::rtps::Locator_t discovery_server;
-        eprosima::fastdds::rtps::IPLocator::setIPv4(discovery_server, 127, 0, 0, 1);
-        discovery_server.port = 11811;
-        participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(discovery_server);
-        */
+        // Aggiunge il server target (127.0.0.1:11812)
+        Locator_t server_locator;
+        IPLocator::setIPv4(server_locator, 127, 0, 0, 1);
+        server_locator.port = 11812;
+        participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
+
         // Crea il DomainParticipant
-        participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(0, participantQos);
         if (participant_ == nullptr)
         {
-            std::cerr << "Errore nella creazione del DomainParticipant con configurazione TCP/Discovery" << std::endl;
-            return false;
-        }
-        // Registra i tipi DDS
-        obstacles_type_.register_type(participant_, "Obstacles");
-        targets_type_.register_type(participant_, "Targets");
-        // Crea i topic "topic 1" e "topic 2"
-        obstacles_topic_ = participant_->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
-        if (obstacles_topic_ == nullptr) {
-            return false;
-        }
-        targets_topic_ = participant_->create_topic("topic 2", "Targets", TOPIC_QOS_DEFAULT);
-        if (targets_topic_ == nullptr) {
-            return false;
-        }
-        // Crea il Subscriber
-        subscriber_ = participant_->create_subscriber(SUBSCRIBER_QOS_DEFAULT, nullptr);
-        if (subscriber_ == nullptr) {
+            std::cerr << "[TargetsSubscriber] Errore creazione DomainParticipant" << std::endl;
             return false;
         }
 
-        // Crea i DataReader per Obstacles e Targets
-        obstacles_reader_ = subscriber_->create_datareader(obstacles_topic_, DATAREADER_QOS_DEFAULT, &obstacles_listener_);
-        if (obstacles_reader_ == nullptr) {
+        // Registra il tipo "Targets"
+        targets_type_.register_type(participant_, "Targets");
+
+        // Crea il Topic (nome: "topic 2")
+        targets_topic_ = participant_->create_topic("topic 2", "Targets", TOPIC_QOS_DEFAULT);
+        if (targets_topic_ == nullptr)
+        {
+            std::cerr << "[TargetsSubscriber] Errore creazione topic per Targets" << std::endl;
             return false;
         }
-        targets_reader_ = subscriber_->create_datareader(targets_topic_, DATAREADER_QOS_DEFAULT, &targets_listener_);
-        if (targets_reader_ == nullptr) {
+
+        // Crea lo Subscriber
+        subscriber_ = participant_->create_subscriber(SUBSCRIBER_QOS_DEFAULT, nullptr);
+        if (subscriber_ == nullptr)
+        {
+            std::cerr << "[TargetsSubscriber] Errore creazione subscriber" << std::endl;
             return false;
         }
+
+        // Crea il DataReader per Targets
+        targets_reader_ = subscriber_->create_datareader(
+            targets_topic_,
+            DATAREADER_QOS_DEFAULT,
+            &targets_listener_);
+        if (targets_reader_ == nullptr)
+        {
+            std::cerr << "[TargetsSubscriber] Errore creazione datareader per Targets" << std::endl;
+            return false;
+        }
+
+        std::cout << "[TargetsSubscriber] Inizializzato correttamente!" << std::endl;
         return true;
     }
 
-    void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
+    void run(char grid[GAME_HEIGHT][GAME_WIDTH])
+    {
+        // Attende finché non viene ricevuto almeno un messaggio
+        while (targets_listener_.samples_ == 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        // Recupera i vettori con le coordinate
+        std::vector<int> trg_x = targets_listener_.targets_msg_.targets_x();
+        std::vector<int> trg_y = targets_listener_.targets_msg_.targets_y();
+
+        if (trg_x.empty() || trg_y.empty()) return; // Nessun target valido
+
+        // Calcolo min e max per x e y
+        int min_trg_x = *std::min_element(trg_x.begin(), trg_x.end());
+        int max_trg_x = *std::max_element(trg_x.begin(), trg_x.end());
+        int min_trg_y = *std::min_element(trg_y.begin(), trg_y.end());
+        int max_trg_y = *std::max_element(trg_y.begin(), trg_y.end());
+
+        // Evita divisioni per zero
+        int range_trg_x = (max_trg_x - min_trg_x) > 0 ? (max_trg_x - min_trg_x) : 1;
+        int range_trg_y = (max_trg_y - min_trg_y) > 0 ? (max_trg_y - min_trg_y) : 1;
+
+        // Prepara una sequenza di caratteri da 0 a 9
+        std::vector<char> digits = {'0','1','2','3','4','5','6','7','8','9'};
+
+        // Mischia i caratteri in modo casuale per assegnare un "numero" a ogni target
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(digits.begin(), digits.end(), g);
+
+        // Posiziona i target sulla griglia
+        size_t trg_count = trg_x.size();
+        for (size_t i = 0; i < trg_count && i < digits.size(); i++)
+        {
+            int new_x = (GAME_WIDTH * (trg_x[i] - min_trg_x)) / range_trg_x;
+            int new_y = (GAME_HEIGHT * (trg_y[i] - min_trg_y)) / range_trg_y;
+
+            new_x = std::clamp(new_x, 0, GAME_WIDTH - 1);
+            new_y = std::clamp(new_y, 0, GAME_HEIGHT - 1);
+
+            grid[new_y][new_x] = digits[i];
+        }
+    }
+};
+
+    /*void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
         // Attende finché non viene ricevuto almeno un messaggio per ciascun topic.
         while (obstacles_listener_.samples_ == 0 || targets_listener_.samples_ == 0){
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -297,8 +495,7 @@ public:
             new_y = std::clamp(new_y, 0, GAME_HEIGHT - 1);
             grid[new_y][new_x] = digits[i];
         }
-    }
-};
+    }*/
 
 int parser(int argc, char *argv[], int *read_fds, int *write_fds) {
     // * Parse read file descriptors
@@ -500,12 +697,19 @@ int main(const int argc, char *argv[]) {
     // * Size of the grid game
     char grid[GAME_HEIGHT][GAME_WIDTH];
     memset(grid, ' ', sizeof(grid));
-    CustomTransportSubscriber *mysub = new CustomTransportSubscriber();
-    if (mysub->init())
+    ObstaclesSubscriber *mysub_obst = new ObstaclesSubscriber();
+    if (mysub_obst->init())
     {
-        mysub->run(grid);
+        mysub_obst->run(grid);
     }
-    delete mysub;
+    delete mysub_obst;
+    TargetsSubscriber *mysub_trg = new TargetsSubscriber();
+    if (mysub_trg->init())
+    {
+        mysub_trg->run(grid);
+    }
+    delete mysub_trg;
+
     // * Game status: 0=menu, 1=initialization, 2=running, -2=pause, -1=quit
     int status = 0;
     int drone_pos[4] = {0, 0, 0, 0};
