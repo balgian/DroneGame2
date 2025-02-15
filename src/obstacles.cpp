@@ -5,6 +5,7 @@
 
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdio.h>
 #include <iostream>
 #include <string.h>
 #include <signal.h>
@@ -14,7 +15,7 @@
 #include <thread>
 #include <atomic>
 #include <ctime>
-
+#include "macros.h"
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
 #include <fastdds/dds/publisher/DataWriter.hpp>
@@ -23,9 +24,7 @@
 #include <fastdds/dds/topic/TypeSupport.hpp>
 #include <fastdds/rtps/transport/TCPv4TransportDescriptor.hpp>
 #include <fastdds/utils/IPLocator.hpp>
-
-#include "ObstaclesPubSubTypes.hpp"  // Tipo DDS generato da Obstacles.idl
-#include "macros.h"                  // Deve definire GAME_HEIGHT e GAME_WIDTH
+#include "ObstaclesPubSubTypes.hpp"
 
 using namespace eprosima::fastdds::dds;
 using namespace eprosima::fastdds::rtps;
@@ -107,7 +106,7 @@ bool init() {
 
         // Configure discovery in SERVER mode:
         //participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
-        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = eprosima::fastdds::rtps::DiscoveryProtocol::SERVER;
+        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
         // Instead of using m_ServerListeningAddresses (which is not supported),
         // set a locator into m_DiscoveryServers.
         Locator_t server_locator;
@@ -159,7 +158,7 @@ bool init() {
         while (!flag) {
             if (listener_.matched_ > 0) {
                 writer_->write(&my_message_);
-                eprosima::fastdds::dds::Duration_t timeout;
+                Duration_t timeout;
                 timeout.seconds = 5;
                 timeout.nanosec = 0;
                 writer_->wait_for_acknowledgments(timeout);
@@ -206,8 +205,22 @@ void signal_triggered(int signum) {
     fflush(logfile);
 }
 
-int main(int argc, char* argv[]) {
-    // * Imposta il gestore per SIGUSR1
+int main (int argc, char *argv[]) {
+    /*
+     * Obstacles process
+     * @param argv[1]: Read file descriptors
+     * @param argv[2]: Write file descriptors
+    */
+    // * Signal handler closure
+    struct sigaction sa0;
+    memset(&sa0, 0, sizeof(sa0));
+    sa0.sa_handler = signal_close;
+    sa0.sa_flags = SA_RESTART;
+    if (sigaction(SIGTERM, &sa0, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    // * Signal handler
     struct sigaction sa1;
     memset(&sa1, 0, sizeof(sa1));
     sa1.sa_handler = signal_triggered;
@@ -216,20 +229,19 @@ int main(int argc, char* argv[]) {
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
-    // * Verifica i parametri: ci aspettiamo 2 argomenti oltre al nome del programma
     if (argc != 3)
     {
         fprintf(stderr, "Usage: %s <write_fd> <logfile_fd>\n", argv[0]);
         return EXIT_FAILURE;
     }
-    // * Parsing del file descriptor per la scrittura (ad esempio, per comunicare con altri processi)
+    // * Parse the writer (to targets)
     int write_fd = atoi(argv[1]);
     if (write_fd <= 0)
     {
         fprintf(stderr, "Invalid write file descriptor: %s\n", argv[1]);
         return EXIT_FAILURE;
     }
-    // * Parsing del file descriptor per il file di log e apertura del file in modalità append
+    // * Parse the logfile file descriptor
     int logfile_fd = atoi(argv[2]);
     logfile = fdopen(logfile_fd, "a");
     if (!logfile)
@@ -237,6 +249,7 @@ int main(int argc, char* argv[]) {
         perror("fdopen logfile");
         return EXIT_FAILURE;
     }
+    // * Initialise and call the DDS server class paasing the random number of obstacles
     uint32_t total_obstacles = static_cast<int>(GAME_HEIGHT * GAME_WIDTH * 0.001);
     auto* mypub = new CustomTransportPublisher();
     if (mypub->init()) {

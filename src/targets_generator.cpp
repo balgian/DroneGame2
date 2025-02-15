@@ -30,13 +30,12 @@ using namespace eprosima::fastdds::rtps;
 using namespace std::chrono_literals;
 
 // Puntatore globale al file di log
-FILE* logfile;
+FILE *logfile;
 static volatile sig_atomic_t keep_running = 1;
 
-// Classe per il publisher DDS per Targets
 class CustomTargetsPublisher {
+    // * DDS Target class
 private:
-    // Messaggio DDS (tipo Targets definito in Targets.idl)
     Targets my_message_;
     DomainParticipant* participant_;
     Publisher* publisher_;
@@ -85,8 +84,7 @@ public:
         DomainParticipantFactory::get_instance()->delete_participant(participant_);
     }
 
-    //! Inizializza il publisher DDS
-bool init() {
+    bool init() {
         my_message_.targets_number(0);
 
         DomainParticipantQos participantQos;
@@ -107,7 +105,7 @@ bool init() {
 
         // Configure discovery in SERVER mode:
         //participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
-        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = eprosima::fastdds::rtps::DiscoveryProtocol::SERVER;
+        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
         // Instead of using m_ServerListeningAddresses (which is not supported),
         // set a locator into m_DiscoveryServers.
         Locator_t server_locator;
@@ -139,11 +137,8 @@ bool init() {
         return true;
     }
 
-    //! Funzione publish_from_grid:
-    //! Scansiona la griglia (GAME_HEIGHT x GAME_WIDTH) per individuare celle non vuote (diverse da ' ')
-    //! e compila il messaggio DDS con le coordinate dei target e il loro numero.
     bool publish_from_grid(const char grid[GAME_HEIGHT][GAME_WIDTH]) {
-        // Pulisce le sequenze precedenti
+        // * Clear the previous sequeces
         my_message_.targets_x().clear();
         my_message_.targets_y().clear();
         int count = 0;
@@ -162,7 +157,7 @@ bool init() {
         while (!flag) {
             if (listener_.matched_ > 0) {
                 writer_->write(&my_message_);
-                eprosima::fastdds::dds::Duration_t timeout;
+                Duration_t timeout;
                 timeout.seconds = 5;
                 timeout.nanosec = 0;
                 writer_->wait_for_acknowledgments(timeout);
@@ -176,7 +171,7 @@ bool init() {
         // Genera i target: inserisce cifre decrescenti da '9' a '0'
         srand(static_cast<unsigned int>(time(NULL)));
         char num_target = '9';
-        while (num_target > '0') {
+        while (num_target >= '0') {
             int x = (rand() % (GAME_WIDTH - 2)) + 1;
             int y = (rand() % (GAME_HEIGHT - 2)) + 1;
             // Se la cella è vuota e non è il centro, inserisce il target
@@ -194,14 +189,28 @@ void signal_close(int signum) {
 }
 void signal_triggered(int signum) {
     time_t now = time(NULL);
-    struct tm* t = localtime(&now);
+    tm *t = localtime(&now);
     fprintf(logfile, "[%02d:%02d:%02d] PID: %d - Targets is active.\n",
             t->tm_hour, t->tm_min, t->tm_sec, getpid());
     fflush(logfile);
 }
 
-int main(int argc, char* argv[]) {
-    // * Imposta il gestore per SIGUSR1
+int main (int argc, char *argv[]) {
+    /*
+     * Targets process
+     * @param argv[1]: Read file descriptors
+     * @param argv[2]: Write file descriptors
+    */
+    // * Signal handler closure
+    struct sigaction sa0;
+    memset(&sa0, 0, sizeof(sa0));
+    sa0.sa_handler = signal_close;
+    sa0.sa_flags = SA_RESTART;
+    if (sigaction(SIGTERM, &sa0, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    // * Signal handler
     struct sigaction sa1;
     memset(&sa1, 0, sizeof(sa1));
     sa1.sa_handler = signal_triggered;
@@ -242,7 +251,6 @@ int main(int argc, char* argv[]) {
         std::cerr << "Publisher initialization failed." << std::endl;
     }
     delete mypub;
-
     close(read_fd);
 
     return 0;

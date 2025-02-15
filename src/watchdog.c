@@ -2,7 +2,6 @@
 // Created by Gian Marco Balia
 //
 // src/watchdog.c
-// watchdog.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>

@@ -53,7 +53,6 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Invalid read file descriptor: %s\n", argv[1]);
     return EXIT_FAILURE;
   }
-
   int write_fd = atoi(argv[2]);
   if (write_fd <= 0) {
     fprintf(stderr, "Invalid write file descriptor: %s\n", argv[2]);
@@ -85,7 +84,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Failed to parse message: %s\n", msg);
       return EXIT_FAILURE;
     }
-    // * Total force
+    // * Declare the total force
     double Fx = (double)force_x/10, Fy = (double)force_y/10;
     // * Compute the repulsive and attractive forces
     for (int i = 0; i < GAME_HEIGHT; i++) {
@@ -98,8 +97,8 @@ int main(int argc, char *argv[]) {
         // * Repulsive forces
         dist = dist < MIN_RHO_OBST ? MIN_RHO_OBST : dist;
         if (dist < RHO_OBST && cell == 'o') {
-          Fx += ETA*(1/dist - 1/RHO_OBST)*dx/pow(dist,3);
-          Fy += ETA*(1/dist - 1/RHO_OBST)*dy/pow(dist,3);
+          Fx -= ETA*(1/dist - 1/RHO_OBST)*dx/pow(dist,3);
+          Fy -= ETA*(1/dist - 1/RHO_OBST)*dy/pow(dist,3);
           continue;
         }
         // * Attractive forces
@@ -124,7 +123,6 @@ int main(int argc, char *argv[]) {
     } else if (x_new > GAME_WIDTH - 3) {
       x_new = GAME_WIDTH - 3;
     }
-
     if (y_new < 3) {
       y_new = 3;
     } else if (y_new > GAME_HEIGHT - 3) {

@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <time.h>
 #include <signal.h>
 #include <ncurses.h>
 #include <fcntl.h>
@@ -21,6 +20,7 @@
 #include <vector>
 #include <random>
 #include <algorithm>
+#include "macros.h"
 
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
@@ -34,7 +34,6 @@
 #include <fastdds/rtps/transport/TCPv4TransportDescriptor.hpp>
 #include <fastdds/utils/IPLocator.hpp>
 
-#include "macros.h"
 #include "ObstaclesPubSubTypes.hpp"
 #include "TargetsPubSubTypes.hpp"
 
@@ -323,7 +322,7 @@ int main(const int argc, char *argv[]) {
                         "<logfile_fd>\n", argv[0]);
         return EXIT_FAILURE;
     }
-    // * Parse argv
+    // * Parse arguments
     int read_fds[NUM_CHILD_PIPES-2];
     int write_fds;
     if (parser(argc, argv, read_fds, &write_fds) == EXIT_FAILURE) {
@@ -367,33 +366,28 @@ int main(const int argc, char *argv[]) {
     int status = 0;
     int drone_pos[4] = {0, 0, 0, 0};
     int drone_force[2] = {0, 0};
-
-    // Variabili per il punteggio
+    // * Score variables
     int score = 500000000;
     int distance_traveled = 0;
     int count_obstacles = 0;
     time_t start_time = time(NULL);
-
+    // * Launches a new terminal window
     pid_t insp_pid = launch_inspection_window();
-
     // * Char read from keyboard
     char c;
     fd_set read_keyboard;
-    struct timeval timeout;
+    timeval timeout;
     do {
         switch (status) {
             case 0: { // * Menu
                 const char *message = "Press S to start or Q to quit";
                 int msg_length = (int)strlen(message);
                 mvwprintw(win, height / 2, (width - msg_length) / 2, "%s", message);
-
                 // * Attempt to read a character from the keyboard pipe (non-blocking)
                 FD_ZERO(&read_keyboard);
                 FD_SET(keyboard, &read_keyboard);
-
                 timeout.tv_sec = 0;
                 timeout.tv_usec = 1e6/FRAME_RATE; // * Frame rate of ~60Hz
-
                 if (select(keyboard + 1, &read_keyboard, NULL, NULL, &timeout) > 0) {
                     if (FD_ISSET(keyboard, &read_keyboard)) {
                         const ssize_t bytesRead = read(keyboard, &c, 1);
@@ -407,15 +401,15 @@ int main(const int argc, char *argv[]) {
                     c = '\0';
                 }
                 // * Change the game status
-                if (c == 'q') status = -1; // * Then quit
+                if (c == 'q') status = -1;  // * Then quit
                 if (c == 's') {
-                    status = 1; // * Run the game
-                    werase(win);      // * Erase entire window
+                    status = 1;  // * Run the game
+                    werase(win);  // * Erase entire window
                 }
                 break;
             }
             case 1: { // * initialization
-                // * Clean possible dirties in grid
+                // * Clean possible dirties in the grid
                 for (int row = 0; row < GAME_HEIGHT; row++) {
                     for (int col = 0; col < GAME_WIDTH; col++) {
                         if (!strchr("o0123456789", grid[row][col])) {
@@ -430,28 +424,21 @@ int main(const int argc, char *argv[]) {
                             count_obstacles++;
                     }
                 }
-                sleep(1);
                 // * Setting drone initial positions
                 drone_pos[0] = GAME_WIDTH / 2;
                 drone_pos[1] = GAME_HEIGHT / 2;
                 drone_pos[2] = GAME_WIDTH / 2;
                 drone_pos[3] = GAME_HEIGHT / 2;
                 // * Run the game
-                for (int r = 0; r < GAME_HEIGHT; r++) {
-                    for (int col = 0; col < GAME_WIDTH; col++) {
-                        if (grid[r][col] == 'o')
-                            mvwprintw(win, r, col, "o");
-                    }
-                }
                 status = 2;
                 break;
             }
             case 2: { // * Running
-                // Salva la posizione precedente per calcolare la velocità
+                // * Ssve the previous drone position to compute the velocity
                 int prev_x = drone_pos[0], prev_y = drone_pos[1];
                 // * Clean the previous position of the drone in the grid
                 grid[drone_pos[1]][drone_pos[0]] = ' ';
-                // * Draw the new map proportionally to the window dimention
+                // * Draw the new map proportionally to the window dimension
                 for (int row = 1; row < GAME_HEIGHT-1; row++) {
                     for (int col = 1; col < GAME_WIDTH-1; col++) {
                         if (grid[row][col] == 'o') {
@@ -470,10 +457,8 @@ int main(const int argc, char *argv[]) {
                 // * Attempt to read a character from the keyboard pipe (non-blocking)
                 FD_ZERO(&read_keyboard);
                 FD_SET(keyboard, &read_keyboard);
-
                 timeout.tv_sec = 0;
                 timeout.tv_usec = 1e6/FRAME_RATE; // * Frame rate of ~60Hz
-
                 if (select(keyboard + 1, &read_keyboard, NULL, NULL, &timeout) > 0) {
                     if (FD_ISSET(keyboard, &read_keyboard)) {
                         const ssize_t bytesRead = read(keyboard, &c, 1);
@@ -526,41 +511,38 @@ int main(const int argc, char *argv[]) {
                     c = 'q';
                     break;
                 }
-                // * Compute the drone velocity
+                // * Compute the mean drone velocity
                 int vel_x = drone_pos[2] - prev_x;
                 int vel_y = drone_pos[3] - prev_y;
-
-                // * Remove the target in the path Use the new oversampled function to remove any target along the path
+                // * Remove any target along the path
                 remove_target_on_path(grid, prev_x, prev_y, drone_pos[2], drone_pos[3]);
-
-                // Prepara il messaggio con i dati: forza, posizione e velocità
+                // * Send the message containing foce, postion and velocity of the drone to the inspector window
                 char insp_msg[128];
                 char key;
                 if (c == '\0') key = '-';
                 else key = c;
-                snprintf(insp_msg, sizeof(insp_msg), "%d,%d,%d,%d,%d,%d,%c", drone_force[0], drone_force[1],
+                snprintf(insp_msg, sizeof(insp_msg), "%d,%d,%d,%d,%d,%d,%c", drone_force[0], -1*drone_force[1],
                     drone_pos[2], drone_pos[3], vel_x, vel_y, key);
                 const int fd = open(INSPECTOR_FIFO, O_WRONLY);
-                // Invia il messaggio al pipe per l'inspector
                 if (write(fd, insp_msg, strlen(insp_msg)) == -1) {
                     perror("write insp_pipe");
                     status = -1;
                     c = 'q';
                 }
                 close(fd);
-                // Aggiorna la distanza percorsa
+                // * Update the traveled distance
                 distance_traveled += abs(drone_pos[2] - prev_x) + abs(drone_pos[3] - prev_y);
-                // Calcola il tempo trascorso
+                // * Compute the time
                 int elapsed_time = (int)(time(NULL) - start_time);
-                // Conta il numero di target
-                int count_targets = 0, count_obstacles = 0;
+                // * Count the remaining targets
+                int count_targets = 0;
                 for (int r = 0; r < GAME_HEIGHT; r++) {
                     for (int col = 0; col < GAME_WIDTH; col++) {
                         if (strchr("0123456789", grid[r][col]) != NULL)
                             count_targets++;
                     }
                 }
-                // Calcola il punteggio con una formula ponderata (questa è solo un'ipotesi)
+                // * Compute the loss score
                 score -= elapsed_time * 10 + distance_traveled * 5 + count_obstacles/((10 -count_targets) * 3000);
                 if (score < 0) score = 0;
                 if (count_targets == 0) {
@@ -593,7 +575,7 @@ int main(const int argc, char *argv[]) {
         }
         // * Draw border for new window
         box(win, 0, 0);   // * Redraw border
-        // * Stampa il punteggio a posizione y=0, x=4
+        // * Print the score
         mvwprintw(win, 0, 4, "Score: %d", score);
         mvwprintw(win, 0, width-20, "Press q to quit");
         wrefresh(win);
@@ -601,7 +583,7 @@ int main(const int argc, char *argv[]) {
         // * Refresh the standard screen and the new window
         wrefresh(win);
         wrefresh(stdscr);
-    } while (!(status == -1  && c == 'q')); // * Exit on 'q' and if status is -2
+    } while (!(status == -1  && c == 'q')); // * Exit on 'q' and if status is -1
 
     // * Close the inspector window
     kill(-insp_pid, SIGTERM);
@@ -650,11 +632,11 @@ int parser(int argc, char *argv[], int *read_fds, int *write_fds) {
 }
 
 void signal_triggered(int signum) {
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
-            "Blackboard is active.");
-    fflush(logfile);
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
+                "Blackboard is active.");
+        fflush(logfile);
 }
 
 int initialize_ncurses() {
@@ -673,8 +655,8 @@ int initialize_ncurses() {
     use_default_colors();   // * Allow default terminal colors
 
     // * Initialize color pairs
-    init_pair(1, COLOR_BLUE, -1); // * Drone
-    init_pair(2, COLOR_GREEN, -1); // * Targets
+    init_pair(1, COLOR_BLUE, -1);   // * Drone
+    init_pair(2, COLOR_GREEN, -1);  // * Targets
     init_pair(3, COLOR_YELLOW, -1); // * Obstacles
 
     return EXIT_SUCCESS;
@@ -726,7 +708,6 @@ pid_t launch_inspection_window() {
             perror("setpgid");
             exit(EXIT_FAILURE);
         }
-        // Lancia gnome-terminal con l'opzione --disable-factory e passa il parametro al programma inspector
         execlp("gnome-terminal", "gnome-terminal", "--disable-factory", "--", "bash", "-c", "./inspector; exec bash", (char *)NULL);
         perror("execlp");
         exit(EXIT_FAILURE);
@@ -734,29 +715,27 @@ pid_t launch_inspection_window() {
     return pid;
 }
 
-void remove_target_on_path(char grid[GAME_HEIGHT][GAME_WIDTH], int x0, int y0, int x1, int y1)
-{
+void remove_target_on_path(char grid[GAME_HEIGHT][GAME_WIDTH], int x0, int y0, int x1, int y1) {
+    // * To see more about this -> "https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm"
     // * Compute the directions
     int dx = abs(x1 - x0);
     int sx = (x0 < x1) ? 1 : -1;
     int dy = -abs(y1 - y0);
     int sy = (y0 < y1) ? 1 : -1;
-
     // * Starting Bresenham's error
     int err = dx + dy;
-
     while (1) {
-        // * Check the grid borders
+        // * Check if the drone is inside the grid
         if (x0 >= 0 && x0 < GAME_WIDTH && y0 >= 0 && y0 < GAME_HEIGHT) {
             if (strchr("0123456789", grid[y0][x0]) != NULL) {
                 grid[y0][x0] = ' ';
             }
         }
-        // * Stop the loop
+        // * Stop when it is reached the last point (x1, y1)
         if (x0 == x1 && y0 == y1) {
             break;
         }
-        // * Update the error (Bresenham's algorithm - https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm)
+        // * Update the e2
         int e2 = 2 * err;
         if (e2 >= dy) {
             err += dy;

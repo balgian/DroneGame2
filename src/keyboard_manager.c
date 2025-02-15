@@ -9,7 +9,6 @@
 #include <signal.h>
 #include <string.h>
 #include <ncurses.h>
-#include <termios.h>
 
 FILE *logfile;
 static volatile sig_atomic_t keep_running = 1;
@@ -59,10 +58,12 @@ int main(const int argc, char *argv[]) {
         perror("fdopen logfile");
         return EXIT_FAILURE;
     }
-    initscr();
+    if (initscr() == NULL) {
+        return EXIT_FAILURE;
+    }
     nodelay(stdscr, TRUE);
     noecho();
-    while(keep_running){
+    while(keep_running) {
         char c = getch();
         switch (c) {
             case 'w': // * Up Left
@@ -88,7 +89,6 @@ int main(const int argc, char *argv[]) {
         }
     }
     endwin();
-
     close(write_fd);
     return EXIT_SUCCESS;
 }
