@@ -54,7 +54,7 @@ private:
                 matched_ = info.total_count;
             } else if (info.current_count_change == -1) {
                 matched_ = info.total_count;
-                std::cout << "Publisher unmatched." << std::endl;
+                //std::cout << "Publisher unmatched." << std::endl;
             } else {
                 std::cout << info.current_count_change
                           << " is not a valid value for PublicationMatchedStatus current count change." << std::endl;
@@ -167,20 +167,28 @@ public:
         return true;
     }
 
-    void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
-        // Genera i target: inserisce cifre decrescenti da '9' a '0'
-        srand(static_cast<unsigned int>(time(NULL)));
-        char num_target = '9';
-        while (num_target >= '0') {
-            int x = (rand() % (GAME_WIDTH - 2)) + 1;
-            int y = (rand() % (GAME_HEIGHT - 2)) + 1;
-            // Se la cella è vuota e non è il centro, inserisce il target
-            if (grid[y][x] == ' ' && !(x == GAME_WIDTH / 2 && y == GAME_HEIGHT / 2)) {
-                grid[y][x] = num_target;
-                num_target--;
+    void run(int read_fd) {
+        while (keep_running) {
+            char grid[GAME_HEIGHT][GAME_WIDTH];
+            memset(grid, ' ', GAME_HEIGHT*GAME_WIDTH);
+            if (read(read_fd, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
+                perror("read");
+                EXIT_FAILURE;
             }
+            // Genera i target: inserisce cifre decrescenti da '9' a '0'
+            srand(static_cast<unsigned int>(time(NULL)));
+            char num_target = '9';
+            while (num_target >= '0') {
+                int x = (rand() % (GAME_WIDTH - 2)) + 1;
+                int y = (rand() % (GAME_HEIGHT - 2)) + 1;
+                // Se la cella è vuota e non è il centro, inserisce il target
+                if (grid[y][x] == ' ' && !(x == GAME_WIDTH / 2 && y == GAME_HEIGHT / 2)) {
+                    grid[y][x] = num_target;
+                    num_target--;
+                }
+            }
+            publish_from_grid(grid);
         }
-        publish_from_grid(grid);
     }
 };
 
@@ -238,15 +246,9 @@ int main (int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    char grid[GAME_HEIGHT][GAME_WIDTH];
-    memset(grid, ' ', GAME_HEIGHT*GAME_WIDTH);
-    if (read(read_fd, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
-        perror("read");
-        return EXIT_FAILURE;
-    }
     CustomTargetsPublisher* mypub = new CustomTargetsPublisher();
     if (mypub->init()) {
-        mypub->run(grid);
+        mypub->run(read_fd);
     } else {
         std::cerr << "Publisher initialization failed." << std::endl;
     }

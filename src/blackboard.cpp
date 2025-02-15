@@ -187,7 +187,6 @@ public:
         DomainParticipantFactory::get_instance()->delete_participant(participant_);
     }
 
-    //! Inizializza il subscriber per entrambi i topic.
     bool init() {
         DomainParticipantQos participantQos;
         participantQos.name("Participant_subscriber");
@@ -254,8 +253,7 @@ public:
     }
 
     void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
-        // Attende finché non viene ricevuto almeno un messaggio per ciascun topic.
-        while (obstacles_listener_.samples_ == 0 || targets_listener_.samples_ == 0){
+        while (obstacles_listener_.samples_ == 0||targets_listener_.samples_ == 0){
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         // * Obtain the vectors of the obstacles' coordinates

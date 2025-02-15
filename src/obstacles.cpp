@@ -54,7 +54,7 @@ private:
                 matched_ = info.total_count;
             } else if (info.current_count_change == -1) {
                 matched_ = info.total_count;
-                std::cout << "Publisher unmatched." << std::endl;
+                //std::cout << "Publisher unmatched." << std::endl;
             } else {
                 std::cout << info.current_count_change
                           << " is not a valid value for PublicationMatchedStatus current count change." << std::endl;
@@ -169,26 +169,24 @@ bool init() {
     }
 
     void run(uint32_t total_obstacles, int write_fd) {
-        // Inizializza il seme per i numeri casuali
         srand(static_cast<unsigned int>(time(NULL)));
-        // Crea una griglia GAME_HEIGHT x GAME_WIDTH
-        char grid[GAME_HEIGHT][GAME_WIDTH];
-        memset(grid, ' ', sizeof(grid));
-
-        while (total_obstacles > 0) {
-            // Genera coordinate casuali (escludendo i bordi)
-            int x = (rand() % (GAME_WIDTH - 2)) + 1;
-            int y = (rand() % (GAME_HEIGHT - 2)) + 1;
-            // Se la cella è vuota e non è il centro, posiziona un ostacolo ('o')
-            if (grid[y][x] == ' ' && !(x == GAME_WIDTH / 2 && y == GAME_HEIGHT / 2)) {
-                grid[y][x] = 'o';
-                total_obstacles--;
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            char grid[GAME_HEIGHT][GAME_WIDTH];
+            memset(grid, ' ', sizeof(grid));
+            while (total_obstacles > 0) {
+                int x = (rand() % (GAME_WIDTH - 2)) + 1;
+                int y = (rand() % (GAME_HEIGHT - 2)) + 1;
+                if (grid[y][x] == ' ' && !(x == GAME_WIDTH / 2 && y == GAME_HEIGHT / 2)) {
+                    grid[y][x] = 'o';
+                    total_obstacles--;
+                }
             }
-        }
-        publish_from_grid(grid);
-        if (write(write_fd, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
-            perror("write");
-            EXIT_FAILURE;
+            if (write(write_fd, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
+                perror("write");
+                EXIT_FAILURE;
+            }
+            publish_from_grid(grid);
         }
     }
 };
