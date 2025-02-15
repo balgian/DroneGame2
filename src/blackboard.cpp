@@ -44,6 +44,13 @@ using namespace std::chrono_literals;
 
 FILE *logfile;
 
+int parser(int argc, char *argv[], int *read_fds, int *write_fds);
+void signal_triggered(int signum);
+int initialize_ncurses();
+void command_drone(int *drone_force, char c);
+pid_t launch_inspection_window();
+void remove_target_on_path(char grid[GAME_HEIGHT][GAME_WIDTH], int x0, int y0, int x1, int y1);
+
 class ObstaclesListener : public DataReaderListener {
 public:
     std::atomic_int samples_;
@@ -300,152 +307,6 @@ public:
     }
 };
 
-int parser(int argc, char *argv[], int *read_fds, int *write_fds) {
-    // * Parse read file descriptors
-    for (int i = 0; i < NUM_CHILD_PIPES-2; i++) {
-        char *endptr;
-        read_fds[i] = strtol(argv[i + 1], &endptr, 10);
-        if (*endptr != '\0' || read_fds[i] < 0) {
-            fprintf(stderr, "Invalid read file descriptor: %s\n", argv[i + 1]);
-            return EXIT_FAILURE;
-        }
-    }
-    // * Parse write file descriptors (excluding keyboard_manager)
-    char *endptr;
-    *write_fds = strtol(argv[NUM_CHILD_PIPES-1], &endptr, 10);
-    if (*endptr != '\0' || *write_fds < 0) {
-        fprintf(stderr, "Invalid write file descriptor: %s\n", argv[NUM_CHILD_PIPES]);
-        return EXIT_FAILURE;
-    }
-    // * Parse logfile file descriptor and open it
-    int logfile_fd = atoi(argv[argc - 1]);
-    logfile = fdopen(logfile_fd, "a");
-    if (!logfile) {
-        perror("fdopen logfile");
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
-}
-
-void signal_triggered(int signum) {
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
-            "Blackboard is active.");
-    fflush(logfile);
-}
-
-int initialize_ncurses() {
-    /*
-     * Initialize ncurses settings and create a new window.
-     * @return Pointer to the newly created window, or NULL on failure.
-    */
-    // * Start curses mode
-    if (initscr() == NULL) {
-        return EXIT_FAILURE;
-    }
-    cbreak();               // * Disable line buffering
-    noecho();               // * Don't echo pressed keys
-    curs_set(FALSE);        // * Hide the cursor
-    start_color();          // * Enable color functionality
-    use_default_colors();   // * Allow default terminal colors
-
-    // * Initialize color pairs
-    init_pair(1, COLOR_BLUE, -1); // * Drone
-    init_pair(2, COLOR_GREEN, -1); // * Targets
-    init_pair(3, COLOR_YELLOW, -1); // * Obstacles
-
-    return EXIT_SUCCESS;
-}
-
-void command_drone(int *drone_force, char c) {
-    /*
-     * Modify the drone force based on the input key.
-     * Command keys:
-     * 'w': Up Left, 'e': Up, 'r': Up Right or Reset,
-     * 's': Left or Suspend, 'd': Brake, 'f': Right,
-     * 'x': Down Left, 'c': Down, 'v': Down Right,
-     * 'p': Pause, 'q': Quit
-     * -------
-     * @param drone_force Array representing the drone's force.
-     * @param c The input character.
-    */
-    if (strchr("wsx", c)) {
-        drone_force[0]--;
-    }
-    if (strchr("rfv", c)) {
-        drone_force[0]++;
-    }
-    if (strchr("wer", c)) {
-        drone_force[1]--;
-    }
-    if (strchr("xcv", c)) {
-        drone_force[1]++;
-    }
-    if (c == 'd') {
-        drone_force[0] = 0;
-        drone_force[1] = 0;
-    }
-}
-
-pid_t launch_inspection_window() {
-    /*
-     * Launches a new terminal window running the "inspector" program.
-     * Returns:
-     * @return pid The process ID (pid) of the newly created child process.
-    */
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    }
-    if (pid == 0) {
-        if (setpgid(0, 0) == -1) {
-            perror("setpgid");
-            exit(EXIT_FAILURE);
-        }
-        // Lancia gnome-terminal con l'opzione --disable-factory e passa il parametro al programma inspector
-        execlp("gnome-terminal", "gnome-terminal", "--disable-factory", "--", "bash", "-c", "./inspector; exec bash", (char *)NULL);
-        perror("execlp");
-        exit(EXIT_FAILURE);
-    }
-    return pid;
-}
-
-void remove_target_on_path_oversample(char grid[GAME_HEIGHT][GAME_WIDTH], int x0, int y0, int x1, int y1) {
-    // TODO: see again this function
-    int dx = abs(x1 - x0);
-    int dy = abs(y1 - y0);
-    // If the movement is mostly horizontal, use a higher oversampling factor.
-    int oversample;
-    if (dy == 0 && dx > 0) {
-        oversample = 10;  // Increase oversampling for horizontal-only moves
-    } else {
-        oversample = 5;   // Otherwise, use the default factor
-    }
-
-    int steps = (dx > dy ? dx : dy) * oversample;
-    if (steps == 0) {
-        if (x0 >= 0 && x0 < GAME_WIDTH && y0 >= 0 && y0 < GAME_HEIGHT) {
-            if (strchr("0123456789", grid[y0][x0]) != NULL)
-                grid[y0][x0] = ' ';
-        }
-        return;
-    }
-
-    for (int i = 0; i <= steps; i++) {
-        double t = (double)i / steps;
-        int x = x0 + (int)round((x1 - x0) * t);
-        int y = y0 + (int)round((y1 - y0) * t);
-        if (x >= 0 && x < GAME_WIDTH && y >= 0 && y < GAME_HEIGHT) {
-            if (strchr("0123456789", grid[y][x]) != NULL) {
-                grid[y][x] = ' ';
-            }
-        }
-    }
-}
-
 int main(const int argc, char *argv[]) {
     // * Define the signal action
     struct sigaction sa;
@@ -456,7 +317,7 @@ int main(const int argc, char *argv[]) {
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
-
+    // * Check if the of argument correspond
     if (argc != NUM_CHILD_PIPES + 1) {
         fprintf(stderr, "Usage: %s <read_fd_keyboard> <read_fd_dynamics> <write_fd_dynamics> "
                         "<logfile_fd>\n", argv[0]);
@@ -468,16 +329,12 @@ int main(const int argc, char *argv[]) {
     if (parser(argc, argv, read_fds, &write_fds) == EXIT_FAILURE) {
         return EXIT_FAILURE;
     }
-    // ! Map the child pipes to more meaningful names
+    // * Map the child pipes to more meaningful names
     const int keyboard = read_fds[0];
-
     const int dynamic_read = read_fds[1];
-
     const int dynamic_write = write_fds;
-
-    // *
+    // * Make the named pipes with inspector process
     mkfifo(INSPECTOR_FIFO, 0666);
-
     // * Initialise window's game
     if (initialize_ncurses() == EXIT_FAILURE) {
         fprintf(stderr, "Error initializing ncurses.\n");
@@ -669,12 +526,12 @@ int main(const int argc, char *argv[]) {
                     c = 'q';
                     break;
                 }
-                // Calcola la velocità (ad esempio, come differenza fra posizione nuova e precedente)
+                // * Compute the drone velocity
                 int vel_x = drone_pos[2] - prev_x;
                 int vel_y = drone_pos[3] - prev_y;
 
-                // Use the new oversampled function to remove any target along the path
-                remove_target_on_path_oversample(grid, prev_x, prev_y, drone_pos[2], drone_pos[3]);
+                // * Remove the target in the path Use the new oversampled function to remove any target along the path
+                remove_target_on_path(grid, prev_x, prev_y, drone_pos[2], drone_pos[3]);
 
                 // Prepara il messaggio con i dati: forza, posizione e velocità
                 char insp_msg[128];
@@ -716,8 +573,12 @@ int main(const int argc, char *argv[]) {
                     c = 'q';
                     mvwprintw(win, height/2, width/2, "GAME OVER");
                 }
+                if (c == 'q') {
+                    status = -1;
+                }
                 break;
             }
+            default: break;
         }
         // * See if the windows is resized
         int new_height = 0, new_width = 0;
@@ -734,27 +595,176 @@ int main(const int argc, char *argv[]) {
         box(win, 0, 0);   // * Redraw border
         // * Stampa il punteggio a posizione y=0, x=4
         mvwprintw(win, 0, 4, "Score: %d", score);
+        mvwprintw(win, 0, width-20, "Press q to quit");
         wrefresh(win);
         refresh();  // * Ensure standard screen updates
         // * Refresh the standard screen and the new window
         wrefresh(win);
         wrefresh(stdscr);
     } while (!(status == -1  && c == 'q')); // * Exit on 'q' and if status is -2
-    sleep(4);
+
+    // * Close the inspector window
     kill(-insp_pid, SIGTERM);
     waitpid(insp_pid, NULL, 0);
-
     // * Final cleanup
     if (win) {
         delwin(win);
     }
     endwin();
 
-    for (int i = 0; i < NUM_CHILD_PIPES; i++) {
+    for (int i = 0; i < NUM_CHILD_PIPES-2; i++) {
         close(read_fds[i]);
     }
     close(write_fds);
     fclose(logfile);
 
     return EXIT_SUCCESS;
+}
+
+int parser(int argc, char *argv[], int *read_fds, int *write_fds) {
+    // * Parse read file descriptors
+    for (int i = 0; i < NUM_CHILD_PIPES-2; i++) {
+        char *endptr;
+        read_fds[i] = strtol(argv[i + 1], &endptr, 10);
+        if (*endptr != '\0' || read_fds[i] < 0) {
+            fprintf(stderr, "Invalid read file descriptor: %s\n", argv[i + 1]);
+            return EXIT_FAILURE;
+        }
+    }
+    // * Parse write file descriptors (excluding keyboard_manager)
+    char *endptr;
+    *write_fds = strtol(argv[NUM_CHILD_PIPES-1], &endptr, 10);
+    if (*endptr != '\0' || *write_fds < 0) {
+        fprintf(stderr, "Invalid write file descriptor: %s\n", argv[NUM_CHILD_PIPES]);
+        return EXIT_FAILURE;
+    }
+    // * Parse logfile file descriptor and open it
+    int logfile_fd = atoi(argv[argc - 1]);
+    logfile = fdopen(logfile_fd, "a");
+    if (!logfile) {
+        perror("fdopen logfile");
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+void signal_triggered(int signum) {
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
+            "Blackboard is active.");
+    fflush(logfile);
+}
+
+int initialize_ncurses() {
+    /*
+     * Initialize ncurses settings and create a new window.
+     * @return Pointer to the newly created window, or NULL on failure.
+    */
+    // * Start curses mode
+    if (initscr() == NULL) {
+        return EXIT_FAILURE;
+    }
+    cbreak();               // * Disable line buffering
+    noecho();               // * Don't echo pressed keys
+    curs_set(FALSE);        // * Hide the cursor
+    start_color();          // * Enable color functionality
+    use_default_colors();   // * Allow default terminal colors
+
+    // * Initialize color pairs
+    init_pair(1, COLOR_BLUE, -1); // * Drone
+    init_pair(2, COLOR_GREEN, -1); // * Targets
+    init_pair(3, COLOR_YELLOW, -1); // * Obstacles
+
+    return EXIT_SUCCESS;
+}
+
+void command_drone(int *drone_force, char c) {
+    /*
+     * Modify the drone force based on the input key.
+     * Command keys:
+     * 'w': Up Left, 'e': Up, 'r': Up Right or Reset,
+     * 's': Left or Suspend, 'd': Brake, 'f': Right,
+     * 'x': Down Left, 'c': Down, 'v': Down Right,
+     * 'p': Pause, 'q': Quit
+     * -------
+     * @param drone_force Array representing the drone's force.
+     * @param c The input character.
+    */
+    if (strchr("wsx", c)) {
+        drone_force[0]--;
+    }
+    if (strchr("rfv", c)) {
+        drone_force[0]++;
+    }
+    if (strchr("wer", c)) {
+        drone_force[1]--;
+    }
+    if (strchr("xcv", c)) {
+        drone_force[1]++;
+    }
+    if (c == 'd') {
+        drone_force[0] = 0;
+        drone_force[1] = 0;
+    }
+}
+
+pid_t launch_inspection_window() {
+    /*
+     * Launches a new terminal window running the "inspector" program.
+     * Returns:
+     * @return pid The process ID (pid) of the newly created child process.
+    */
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    }
+    if (pid == 0) {
+        if (setpgid(0, 0) == -1) {
+            perror("setpgid");
+            exit(EXIT_FAILURE);
+        }
+        // Lancia gnome-terminal con l'opzione --disable-factory e passa il parametro al programma inspector
+        execlp("gnome-terminal", "gnome-terminal", "--disable-factory", "--", "bash", "-c", "./inspector; exec bash", (char *)NULL);
+        perror("execlp");
+        exit(EXIT_FAILURE);
+    }
+    return pid;
+}
+
+void remove_target_on_path(char grid[GAME_HEIGHT][GAME_WIDTH], int x0, int y0, int x1, int y1)
+{
+    // * Compute the directions
+    int dx = abs(x1 - x0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int dy = -abs(y1 - y0);
+    int sy = (y0 < y1) ? 1 : -1;
+
+    // * Starting Bresenham's error
+    int err = dx + dy;
+
+    while (1) {
+        // * Check the grid borders
+        if (x0 >= 0 && x0 < GAME_WIDTH && y0 >= 0 && y0 < GAME_HEIGHT) {
+            if (strchr("0123456789", grid[y0][x0]) != NULL) {
+                grid[y0][x0] = ' ';
+            }
+        }
+        // * Stop the loop
+        if (x0 == x1 && y0 == y1) {
+            break;
+        }
+        // * Update the error (Bresenham's algorithm - https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm)
+        int e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            x0  += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y0  += sy;
+        }
+    }
 }

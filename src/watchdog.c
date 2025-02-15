@@ -9,7 +9,6 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <stdio.h>
 #include "macros.h"
 
@@ -81,33 +80,6 @@ int main(int argc, char *argv[]) {
             kill(blackboard_pid, SIGTERM);
             exit(EXIT_FAILURE);
         }
-        /*
-        for (int i = 0; i < num_child_pids; i++) {
-            if (kill(child_pids[i], 0) == -1) {
-                if (errno == ESRCH) {
-                    for (int j = 0; j < num_child_pids; j++) {
-                        kill(child_pids[j], SIGTERM);
-                    }
-                    kill(blackboard_pid, SIGTERM);
-                    exit(EXIT_SUCCESS);
-                }
-                if (errno == EPERM) {
-
-                }
-            }
-        }
-        if (kill(blackboard_pid, 0) == -1) {
-            if (errno == ESRCH) {
-                for (int j = 0; j < num_child_pids; j++) {
-                    kill(child_pids[j], SIGTERM);
-                }
-                kill(blackboard_pid, SIGTERM);
-                exit(EXIT_SUCCESS);
-            }
-            if (errno == EPERM) {
-
-            }
-        }*/
     }
 
     return EXIT_SUCCESS;

@@ -32,6 +32,7 @@ using namespace eprosima::fastdds::rtps;
 using namespace std::chrono_literals;
 
 FILE* logfile;
+static volatile sig_atomic_t keep_running = 1;
 
 class CustomTransportPublisher {
 private:
@@ -193,9 +194,13 @@ bool init() {
     }
 };
 
+void signal_close(int signum) {
+    keep_running = 0;
+}
+
 void signal_triggered(int signum) {
     time_t now = time(NULL);
-    struct tm *t = localtime(&now);
+    tm *t = localtime(&now);
     fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
         "Obstacles is active.");
     fflush(logfile);
@@ -232,10 +237,8 @@ int main(int argc, char* argv[]) {
         perror("fdopen logfile");
         return EXIT_FAILURE;
     }
-
     uint32_t total_obstacles = static_cast<int>(GAME_HEIGHT * GAME_WIDTH * 0.001);
-
-    CustomTransportPublisher* mypub = new CustomTransportPublisher();
+    auto* mypub = new CustomTransportPublisher();
     if (mypub->init()) {
         mypub->run(total_obstacles, write_fd);
     }

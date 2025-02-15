@@ -13,14 +13,10 @@
 #include "macros.h"
 
 FILE *logfile;
+static volatile sig_atomic_t keep_running = 1;
 
-void signal_triggered(int signum) {
-  time_t now = time(NULL);
-  struct tm *t = localtime(&now);
-  fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
-      "Dynamics is active.");
-  fflush(logfile);
-}
+void signal_close(int signum);
+void signal_triggered(int signum);
 
 int main(int argc, char *argv[]) {
   /*
@@ -28,7 +24,15 @@ int main(int argc, char *argv[]) {
    * @param argv[1]: Read file descriptors
    * @param argv[2]: Write file descriptors
   */
-
+  // * Signal handler closure
+  struct sigaction sa0;
+  memset(&sa0, 0, sizeof(sa0));
+  sa0.sa_handler = signal_close;
+  sa0.sa_flags = SA_RESTART;
+  if (sigaction(SIGTERM, &sa0, NULL) == -1) {
+    perror("sigaction");
+    exit(EXIT_FAILURE);
+  }
   // * Signal handler
   struct sigaction sa1;
   memset(&sa1, 0, sizeof(sa1));
@@ -38,12 +42,12 @@ int main(int argc, char *argv[]) {
     perror("sigaction");
     exit(EXIT_FAILURE);
   }
-
+  // * CHeck if the nuber of argument correspond
   if (argc != 4) {
     fprintf(stderr, "Usage: %s <read_fd> <write_fd> <logfile_fd>\n", argv[0]);
     return EXIT_FAILURE;
   }
-
+  // * Parse the read and write
   int read_fd = atoi(argv[1]);
   if (read_fd <= 0) {
     fprintf(stderr, "Invalid read file descriptor: %s\n", argv[1]);
@@ -55,7 +59,6 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Invalid write file descriptor: %s\n", argv[2]);
     return EXIT_FAILURE;
   }
-
   // * Parse logfile file descriptors
   int logfile_fd = atoi(argv[argc - 1]);
   logfile = fdopen(logfile_fd, "a");
@@ -63,7 +66,7 @@ int main(int argc, char *argv[]) {
     perror("fdopen logfile");
     return EXIT_FAILURE;
   }
-  while(1) {
+  while(keep_running) {
     // * Receive the updated map
     char grid[GAME_HEIGHT][GAME_WIDTH];
     memset(grid, ' ', GAME_HEIGHT*GAME_WIDTH);
@@ -84,7 +87,7 @@ int main(int argc, char *argv[]) {
     }
     // * Total force
     double Fx = (double)force_x/10, Fy = (double)force_y/10;
-
+    // * Compute the repulsive and attractive forces
     for (int i = 0; i < GAME_HEIGHT; i++) {
       for (int j = 0; j < GAME_WIDTH; j++) {
         const char cell = grid[i][j];
@@ -92,14 +95,14 @@ int main(int argc, char *argv[]) {
         const int dx = x[1] - j;
         const int dy = y[1] - i;
         double dist = sqrt((double)dx*dx + (double)dy*dy);
-
+        // * Repulsive forces
         dist = dist < MIN_RHO_OBST ? MIN_RHO_OBST : dist;
         if (dist < RHO_OBST && cell == 'o') {
           Fx += ETA*(1/dist - 1/RHO_OBST)*dx/pow(dist,3);
           Fy += ETA*(1/dist - 1/RHO_OBST)*dy/pow(dist,3);
           continue;
         }
-
+        // * Attractive forces
         dist = sqrt((double)dx*dx + (double)dy*dy);
         dist = dist < MIN_RHO_TRG ? MIN_RHO_TRG : dist;
         if (dist < RHO_TRG && strchr("0123456789", cell)) {
@@ -108,7 +111,6 @@ int main(int argc, char *argv[]) {
         }
       }
     }
-
     // * Compute the position from the force
     int x_new = (int)(
             (TIME*TIME*Fx - DRONE_MASS*x[0] + (2*DRONE_MASS + DAMPING*TIME)*x[1]) / (DRONE_MASS + DAMPING*TIME)
@@ -116,27 +118,19 @@ int main(int argc, char *argv[]) {
     int y_new = (int)(
         (TIME*TIME*Fy - DRONE_MASS*y[0] + (2*DRONE_MASS + DAMPING*TIME)*y[1]) / (DRONE_MASS + DAMPING*TIME)
     );
-
-    // TODO: delete this two rows
-    x_new = x[1] + force_x;
-    y_new = y[1] + force_y;
-
     // * Clamp to window boundaries so we do not jump outside:
-    // ! Notice that the min position is 2 and the max is MAX-3. This to guarantee that the drone stay inside the map
-    // ! also when the window is rescaled (height/GAME_HEIGHT is a double and the convertion can take the drone on
-    // ! the border)
-    if (x_new < 2) {
-      x_new = 2;
+    if (x_new < 3) {
+      x_new = 3;
     } else if (x_new > GAME_WIDTH - 3) {
       x_new = GAME_WIDTH - 3;
     }
 
-    if (y_new < 2) {
-      y_new = 2;
+    if (y_new < 3) {
+      y_new = 3;
     } else if (y_new > GAME_HEIGHT - 3) {
       y_new = GAME_HEIGHT - 3;
     }
-
+    // * Send the new position of the drone
     char out_buf[32];
     sprintf(out_buf, "%d,%d", x_new, y_new);
     if (write(write_fd, out_buf, sizeof(out_buf)) == -1) {
@@ -145,4 +139,16 @@ int main(int argc, char *argv[]) {
     }
   }
   return EXIT_SUCCESS;
+}
+
+void signal_close(int signum) {
+  keep_running = 0;
+}
+
+void signal_triggered(int signum) {
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  fprintf(logfile, "[%02d:%02d:%02d] PID: %d - %s\n", t->tm_hour, t->tm_min, t->tm_sec, getpid(),
+      "Dynamics is active.");
+  fflush(logfile);
 }

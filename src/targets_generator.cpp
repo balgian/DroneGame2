@@ -31,6 +31,7 @@ using namespace std::chrono_literals;
 
 // Puntatore globale al file di log
 FILE* logfile;
+static volatile sig_atomic_t keep_running = 1;
 
 // Classe per il publisher DDS per Targets
 class CustomTargetsPublisher {
@@ -188,6 +189,9 @@ bool init() {
     }
 };
 
+void signal_close(int signum) {
+    keep_running = 0;
+}
 void signal_triggered(int signum) {
     time_t now = time(NULL);
     struct tm* t = localtime(&now);

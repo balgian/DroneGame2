@@ -61,7 +61,7 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
 
-    // * Step 4: Create the Blackboard Process
+    // * Step 3: Create the Blackboard Process
     const pid_t blackboard_pid = create_blackboard_process(pipes, pipe_blackboard, logfile_fd);
     if (blackboard_pid == -1) {
         fprintf(stderr, "Failed to create blackboard process.\n");
@@ -79,7 +79,7 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
 
-    // * Step 3: Create the Watchdog process
+    // * Step 4: Create the Watchdog process
     const pid_t watchdog_pid = create_watchdog_process(pids, blackboard_pid, logfile_fd);
     if (watchdog_pid == -1) {
         fprintf(stderr, "Failed to create watchdog process.\n");
@@ -99,7 +99,7 @@ int main(void) {
     }
 
     // * Step 5: Close All Pipes in the Parent Process
-    for (int i = 0; i < NUM_CHILD_PIPES; i++) {
+    for (int i = 0; i < NUM_CHILD_PIPES-1; i++) {
         close(pipes[i][0]);
         close(pipes[i][1]);
     }
@@ -107,13 +107,16 @@ int main(void) {
     close(pipe_blackboard[1]);
 
     // * Step 6: Wait for All Child Processes to finish
+    if (waitpid(blackboard_pid, NULL, 0) == -1) {
+        perror("waitpid blackboard");
+    }
     for (int i = 0; i < NUM_CHILD_PROCESSES; i++) {
+        if (kill(pids[i], SIGTERM) == -1) {
+            perror("kill watchdog");
+        }
         if (waitpid(pids[i], NULL, 0) == -1) {
             perror("waitpid child");
         }
-    }
-    if (waitpid(blackboard_pid, NULL, 0) == -1) {
-        perror("waitpid blackboard");
     }
     // * Send a signal to close the watchdog when all is closed
     if (kill(watchdog_pid, SIGTERM) == -1) {

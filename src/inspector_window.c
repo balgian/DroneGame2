@@ -7,9 +7,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/fcntl.h>
+#include <signal.h>
 #include <errno.h>
 
 #include "macros.h"
+
+static volatile sig_atomic_t keep_running = 1;
+
+void signal_close(int signum);
 
 int main() {
     // Inizializza ncurses
@@ -82,7 +87,7 @@ int main() {
     // -----------------------------------------------
 
     // Ciclo principale: legge dal FIFO e aggiorna i box
-    while (1) {
+    while (keep_running) {
         char insp_msg[128] = {0};
         int fd = open(INSPECTOR_FIFO, O_RDONLY);
         if (fd == -1) {
@@ -204,10 +209,14 @@ int main() {
         wrefresh(right_box);
     }
 
-    // Cleanup (non raggiunto in questo esempio)
+    // Cleanup
     delwin(left_box);
     delwin(right_box);
     delwin(inspect_win);
     endwin();
     return EXIT_SUCCESS;
+}
+
+void signal_close(int signum) {
+    keep_running = 0;
 }

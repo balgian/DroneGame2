@@ -12,7 +12,9 @@
 #include <termios.h>
 
 FILE *logfile;
+static volatile sig_atomic_t keep_running = 1;
 
+void signal_close(int signum);
 void signal_triggered(int signum);
 
 int main(const int argc, char *argv[]) {
@@ -20,7 +22,16 @@ int main(const int argc, char *argv[]) {
      * Keyboard process
      * @param argv[1]: Write file descriptors
     */
-    // * Signal handler
+    // * Signal handler closure
+    struct sigaction sa0;
+    memset(&sa0, 0, sizeof(sa0));
+    sa0.sa_handler = signal_close;
+    sa0.sa_flags = SA_RESTART;
+    if (sigaction(SIGTERM, &sa0, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    // * Signal handler watchdog
     struct sigaction sa1;
     memset(&sa1, 0, sizeof(sa1));
     sa1.sa_handler = signal_triggered;
@@ -49,8 +60,9 @@ int main(const int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     initscr();
+    nodelay(stdscr, TRUE);
     noecho();
-    while(1){
+    while(keep_running){
         char c = getch();
         switch (c) {
             case 'w': // * Up Left
@@ -79,6 +91,10 @@ int main(const int argc, char *argv[]) {
 
     close(write_fd);
     return EXIT_SUCCESS;
+}
+
+void signal_close(int signum) {
+    keep_running = 0;
 }
 
 void signal_triggered(int signum) {
