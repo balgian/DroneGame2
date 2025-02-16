@@ -88,27 +88,25 @@ public:
         my_message_.targets_number(0);
 
         DomainParticipantQos participantQos = PARTICIPANT_QOS_DEFAULT;
-        participantQos.name("Targets_publisher");
+        //participantQos.name("Targets_Publisher");
 
         // * Configure the current participant as SERVER
-        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
+        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
 
-        // * Add custom user transport with TCP port 0 (automatic port assignation)
+        // Add custom user transport with TCP port 12346
         auto data_transport = std::make_shared<TCPv4TransportDescriptor>();
-        data_transport->add_listener_port(0);
+        data_transport->add_listener_port(12346);
         participantQos.transport().user_transports.push_back(data_transport);
 
-        // * Define the server locator to be on interface 192.168.10.57 and port 12346
-        constexpr uint16_t server_port = 12346;
-        Locator_t server_locator;
-        IPLocator::setIPv4(server_locator, "192.168.10.57");
-        IPLocator::setPhysicalPort(server_locator, server_port);
-        IPLocator::setLogicalPort(server_locator, server_port);
+        // Define the listening locator to be on interface 192.168.10.57 and port 12345
+        constexpr uint16_t tcp_listening_port = 12346;
+        Locator_t listening_locator;
+        IPLocator::setIPv4(listening_locator, "127.0.0.1");
+        IPLocator::setPhysicalPort(listening_locator, tcp_listening_port);
+        IPLocator::setLogicalPort(listening_locator, tcp_listening_port);
+        participantQos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(listening_locator);
 
-        // *Add the server
-        participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
-
-        participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(0, participantQos);
         if (participant_ == nullptr) {
             std::cerr << "Failed to create DomainParticipant with TCP/Discovery configuration in Targets generator" << std::endl;
             return false;
@@ -147,9 +145,10 @@ public:
             }
         }
         my_message_.targets_number(count);
-
         int flag = 0;
-        while (!flag) {
+        while (!flag || keep_running) {
+            //std::cout << "Targets ready to send" << std::endl;
+            //std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (listener_.matched_ > 0) {
                 writer_->write(&my_message_);
                 Duration_t timeout;
@@ -163,8 +162,8 @@ public:
     }
 
     void run(int read_fd) {
+        srand(static_cast<unsigned int>(time(NULL)));
         while (keep_running) {
-            std::cout << "Target" << std::endl;
             char grid[GAME_HEIGHT][GAME_WIDTH];
             memset(grid, ' ', GAME_HEIGHT*GAME_WIDTH);
             if (read(read_fd, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
@@ -172,7 +171,6 @@ public:
                 EXIT_FAILURE;
             }
             // Genera i target: inserisce cifre decrescenti da '9' a '0'
-            srand(static_cast<unsigned int>(time(NULL)));
             char num_target = '9';
             while (num_target >= '0') {
                 int x = (rand() % (GAME_WIDTH - 2)) + 1;

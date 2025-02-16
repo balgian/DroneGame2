@@ -134,8 +134,8 @@ public:
 
 class CustomTransportSubscriber {
 private:
-    DomainParticipant *participant_;
-    Subscriber *subscriber_;
+    DomainParticipant *participant_obstacles, *participant_targets;
+    Subscriber *subscriber_obstacles, *subscriber_targets;
 
     // Topics e DataReaders per Obstacles e Targets
     Topic *obstacles_topic_;
@@ -152,8 +152,10 @@ private:
 
 public:
     CustomTransportSubscriber()
-        : participant_(nullptr)
-        , subscriber_(nullptr)
+        : participant_obstacles(nullptr)
+        , participant_targets(nullptr)
+        , subscriber_obstacles(nullptr)
+        , subscriber_targets(nullptr)
         , obstacles_topic_(nullptr)
         , obstacles_reader_(nullptr)
         , targets_topic_(nullptr)
@@ -166,78 +168,113 @@ public:
     {
         if (obstacles_reader_ != nullptr)
         {
-            subscriber_->delete_datareader(obstacles_reader_);
+            subscriber_obstacles->delete_datareader(obstacles_reader_);
         }
         if (targets_reader_ != nullptr)
         {
-            subscriber_->delete_datareader(targets_reader_);
+            subscriber_targets->delete_datareader(targets_reader_);
         }
         if (obstacles_topic_ != nullptr)
         {
-            participant_->delete_topic(obstacles_topic_);
+            participant_obstacles->delete_topic(obstacles_topic_);
         }
         if (targets_topic_ != nullptr)
         {
-            participant_->delete_topic(targets_topic_);
+            participant_targets->delete_topic(targets_topic_);
         }
-        if (subscriber_ != nullptr)
+        if (subscriber_obstacles != nullptr)
         {
-            participant_->delete_subscriber(subscriber_);
+            participant_obstacles->delete_subscriber(subscriber_obstacles);
         }
-        DomainParticipantFactory::get_instance()->delete_participant(participant_);
+        if (subscriber_targets != nullptr)
+        {
+            participant_targets->delete_subscriber(subscriber_targets);
+        }
+        DomainParticipantFactory::get_instance()->delete_participant(participant_obstacles);
+        DomainParticipantFactory::get_instance()->delete_participant(participant_targets);
     }
 
     bool init() {
-        DomainParticipantQos participantQos = PARTICIPANT_QOS_DEFAULT;
-        participantQos.name("Blackboard_server");
+        DomainParticipantQos participantQos_obstacles = PARTICIPANT_QOS_DEFAULT;
+        DomainParticipantQos participantQos_targets = PARTICIPANT_QOS_DEFAULT;
 
-        // * Configure the current participant as SERVER
-        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
+        // Configure the current participant as SERVER
+        participantQos_obstacles.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
+        participantQos_targets.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
 
-        // * Add custom user transport with TCP port 12345
-        auto data_transport = std::make_shared<TCPv4TransportDescriptor>();
-        data_transport->add_listener_port(12345);
-        participantQos.transport().user_transports.push_back(data_transport);
+        //participantQos_obstacles.name("Obstacles_Subscriber");
+        //participantQos_targets.name("Targets_Subscriber");
 
-        // * Define the listening locator to be on interface 192.168.10.57 and port 12345
-        constexpr uint16_t tcp_listening_port = 12345;
-        Locator_t listening_locator;
-        IPLocator::setIPv4(listening_locator, "192.168.10.57");
-        IPLocator::setPhysicalPort(listening_locator, tcp_listening_port);
-        IPLocator::setLogicalPort(listening_locator, tcp_listening_port);
-        participantQos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(listening_locator);
+        // Add custom user transport with TCP port 0 (automatic port assignation)
+        auto data_transport_obstacles = std::make_shared<TCPv4TransportDescriptor>();
+        data_transport_obstacles->add_listener_port(0);
+        participantQos_obstacles.transport().user_transports.push_back(data_transport_obstacles);
+        auto data_transport_targets = std::make_shared<TCPv4TransportDescriptor>();
+        data_transport_targets->add_listener_port(0);
+        participantQos_targets.transport().user_transports.push_back(data_transport_targets);
+
+        // * Define the Obstacles server locator to be on interface 192.168.10.57 and port 12345
+        constexpr uint16_t server_port_obstacles = 12345;
+        Locator_t server_locator_obstacles;
+        IPLocator::setIPv4(server_locator_obstacles, "127.0.0.1");
+        IPLocator::setPhysicalPort(server_locator_obstacles, server_port_obstacles);
+        IPLocator::setLogicalPort(server_locator_obstacles, server_port_obstacles);
+
+       // Add the server
+        participantQos_obstacles.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator_obstacles);
+
+        // Define the Targets server locator to be on interface 192.168.10.57 and port 12345
+        constexpr uint16_t server_port_targets = 12346;
+        Locator_t server_locator_targets;
+        IPLocator::setIPv4(server_locator_targets, "127.0.0.1");
+        IPLocator::setPhysicalPort(server_locator_targets, server_port_targets);
+        IPLocator::setLogicalPort(server_locator_targets, server_port_targets);
+
+        // Add the server
+        participantQos_targets.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator_targets);
 
         // Crea il DomainParticipant
-        participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
-        if (participant_ == nullptr)
+        participant_obstacles = DomainParticipantFactory::get_instance()->create_participant(0, participantQos_obstacles);
+        if (participant_obstacles == nullptr)
         {
-            std::cerr << "Errore nella creazione del DomainParticipant con configurazione TCP/Discovery" << std::endl;
+            std::cerr << "Errore nella creazione del DomainParticipant Obstacles con configurazione TCP/Discovery" << std::endl;
+            return false;
+        }
+        participant_targets = DomainParticipantFactory::get_instance()->create_participant(0, participantQos_targets);
+        if (participant_targets == nullptr)
+        {
+            std::cerr << "Errore nella creazione del DomainParticipant Targets con configurazione TCP/Discovery" << std::endl;
             return false;
         }
         // Registra i tipi DDS
-        obstacles_type_.register_type(participant_, "Obstacles");
-        targets_type_.register_type(participant_, "Targets");
+        obstacles_type_.register_type(participant_obstacles, "Obstacles");
+        targets_type_.register_type(participant_targets, "Targets");
         // Crea i topic "topic 1" e "topic 2"
-        obstacles_topic_ = participant_->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
+        obstacles_topic_ = participant_obstacles->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
         if (obstacles_topic_ == nullptr) {
             return false;
         }
-        targets_topic_ = participant_->create_topic("topic 2", "Targets", TOPIC_QOS_DEFAULT);
+        targets_topic_ = participant_targets->create_topic("topic 2", "Targets", TOPIC_QOS_DEFAULT);
         if (targets_topic_ == nullptr) {
             return false;
         }
-        // Crea il Subscriber
-        subscriber_ = participant_->create_subscriber(SUBSCRIBER_QOS_DEFAULT, nullptr);
-        if (subscriber_ == nullptr) {
+        // * Make the Obstacles Subscriber
+        subscriber_obstacles = participant_obstacles->create_subscriber(SUBSCRIBER_QOS_DEFAULT, nullptr);
+        if (subscriber_obstacles == nullptr) {
+            return false;
+        }
+        // * Make the Targets Subscriber
+        subscriber_targets = participant_targets->create_subscriber(SUBSCRIBER_QOS_DEFAULT, nullptr);
+        if (subscriber_targets == nullptr) {
             return false;
         }
 
         // Crea i DataReader per Obstacles e Targets
-        obstacles_reader_ = subscriber_->create_datareader(obstacles_topic_, DATAREADER_QOS_DEFAULT, &obstacles_listener_);
+        obstacles_reader_ = subscriber_obstacles->create_datareader(obstacles_topic_, DATAREADER_QOS_DEFAULT, &obstacles_listener_);
         if (obstacles_reader_ == nullptr) {
             return false;
         }
-        targets_reader_ = subscriber_->create_datareader(targets_topic_, DATAREADER_QOS_DEFAULT, &targets_listener_);
+        targets_reader_ = subscriber_targets->create_datareader(targets_topic_, DATAREADER_QOS_DEFAULT, &targets_listener_);
         if (targets_reader_ == nullptr) {
             return false;
         }
@@ -246,7 +283,7 @@ public:
 
     void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
         while (obstacles_listener_.samples_ == 0||targets_listener_.samples_ == 0){
-            std::cout << "Blackboard" << std::endl;
+            //std::cout << "Blackboard" << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         // * Obtain the vectors of the obstacles' coordinates
@@ -294,7 +331,6 @@ public:
             new_y = std::clamp(new_y, 0, GAME_HEIGHT - 1);
             grid[new_y][new_x] = digits[i];
         }
-        std::cout << "OK" << std::endl;
     }
 };
 
