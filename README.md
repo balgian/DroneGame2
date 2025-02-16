@@ -4,7 +4,7 @@
 `Student ID` 4398275\
 `e-mail` s4398275@studenti.unige.it
 
-`GitHub` https://github.com/balgian/DroneGame.git
+`GitHub` https://github.com/balgian/DroneGame2.git
 
 
 Drone Game 2 is a multi-process C project where a drone navigates through a a map filled with obstacles and targets, but now online! It utilizes interprocess communication via pipes and signals, with dedicated components for managing the game state, processing user input, computing drone dynamics, and monitoring processes and **TCP** communication with **Fast DDS 3.1.2 Discovery Server**. Built and tested on **Ubuntu 24.04** running on an **AMD processor**, with **C 17** and **CMake 3.28**. Follow the instructions below to set up and run the project.
