@@ -188,33 +188,25 @@ public:
     }
 
     bool init() {
-        DomainParticipantQos participantQos;
-        participantQos.name("Participant_subscriber");
-        /*
-        // Disabilita i trasporti built-in (default UDP, shared memory, ecc.)
-        participantQos.transport().use_builtin_transports = false;
+        DomainParticipantQos participantQos = PARTICIPANT_QOS_DEFAULT;
+        participantQos.name("Blackboard_server");
 
-        // Crea e configura il trasporto TCP
-        auto tcp_transport = std::make_shared<eprosima::fastdds::rtps::TCPv4TransportDescriptor>();
-        // Imposta send/receive buffer in modo che siano maggiori di maxMessageSize
-        tcp_transport->add_listener_port(5100);
-        // Specifica l'interfaccia (la "white list") su cui il trasporto deve mettersi in ascolto
-        tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
-        // Specifica anche il WAN address, in modo che il Discovery Server sappia dove contattare questo participant
-        tcp_transport->set_WAN_address("127.0.0.1");
-        tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
-        participantQos.transport().user_transports.push_back(tcp_transport);
+        // * Configure the current participant as SERVER
+        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
 
-        // Configura il discovery per utilizzare il Discovery Server in modalità CLIENT
-        participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
-        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = eprosima::fastdds::rtps::DiscoveryProtocol::CLIENT;
+        // * Add custom user transport with TCP port 12345
+        auto data_transport = std::make_shared<TCPv4TransportDescriptor>();
+        data_transport->add_listener_port(12345);
+        participantQos.transport().user_transports.push_back(data_transport);
 
-        // Specifica l'indirizzo del Discovery Server (assicurati che il Discovery Server sia attivo su 127.0.0.1:11811)
-        eprosima::fastdds::rtps::Locator_t discovery_server;
-        eprosima::fastdds::rtps::IPLocator::setIPv4(discovery_server, 127, 0, 0, 1);
-        discovery_server.port = 11811;
-        participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(discovery_server);
-        */
+        // * Define the listening locator to be on interface 192.168.10.57 and port 12345
+        constexpr uint16_t tcp_listening_port = 12345;
+        Locator_t listening_locator;
+        IPLocator::setIPv4(listening_locator, "192.168.10.57");
+        IPLocator::setPhysicalPort(listening_locator, tcp_listening_port);
+        IPLocator::setLogicalPort(listening_locator, tcp_listening_port);
+        participantQos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(listening_locator);
+
         // Crea il DomainParticipant
         participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
         if (participant_ == nullptr)
@@ -254,6 +246,7 @@ public:
 
     void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
         while (obstacles_listener_.samples_ == 0||targets_listener_.samples_ == 0){
+            std::cout << "Blackboard" << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         // * Obtain the vectors of the obstacles' coordinates
@@ -301,6 +294,7 @@ public:
             new_y = std::clamp(new_y, 0, GAME_HEIGHT - 1);
             grid[new_y][new_x] = digits[i];
         }
+        std::cout << "OK" << std::endl;
     }
 };
 

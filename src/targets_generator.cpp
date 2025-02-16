@@ -87,32 +87,27 @@ public:
     bool init() {
         my_message_.targets_number(0);
 
-        DomainParticipantQos participantQos;
-        participantQos.name("Participant_publisher");
-        /*
-        // Disable built-in transports
-        participantQos.transport().use_builtin_transports = false;
+        DomainParticipantQos participantQos = PARTICIPANT_QOS_DEFAULT;
+        participantQos.name("Targets_publisher");
 
-        // Create and configure the TCP transport.
-        // Use new with std::shared_ptr if needed.
-        std::shared_ptr<TCPv4TransportDescriptor> tcp_transport(
-            new TCPv4TransportDescriptor());
-        tcp_transport->add_listener_port(5100);
-        // Set the WAN address (public address) and specify local interface
-        tcp_transport->set_WAN_address("127.0.0.1");
-        tcp_transport->interfaceWhiteList.push_back("127.0.0.1");
-        //participantQos.transport().user_transports.push_back(tcp_transport);
+        // * Configure the current participant as SERVER
+        participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
 
-        // Configure discovery in SERVER mode:
-        //participantQos.wire_protocol().builtin.discovery_config.use_SIMPLE_EndpointDiscoveryProtocol = false;
-        //participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
-        // Instead of using m_ServerListeningAddresses (which is not supported),
-        // set a locator into m_DiscoveryServers.
+        // * Add custom user transport with TCP port 0 (automatic port assignation)
+        auto data_transport = std::make_shared<TCPv4TransportDescriptor>();
+        data_transport->add_listener_port(0);
+        participantQos.transport().user_transports.push_back(data_transport);
+
+        // * Define the server locator to be on interface 192.168.10.57 and port 12346
+        constexpr uint16_t server_port = 12346;
         Locator_t server_locator;
-        IPLocator::setIPv4(server_locator, 127, 0, 0, 1);
-        server_locator.port = 11811;
-        //participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
-        */
+        IPLocator::setIPv4(server_locator, "192.168.10.57");
+        IPLocator::setPhysicalPort(server_locator, server_port);
+        IPLocator::setLogicalPort(server_locator, server_port);
+
+        // *Add the server
+        participantQos.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator);
+
         participant_ = DomainParticipantFactory::get_instance()->create_participant(1, participantQos);
         if (participant_ == nullptr) {
             std::cerr << "Failed to create DomainParticipant with TCP/Discovery configuration in Targets generator" << std::endl;
@@ -169,6 +164,7 @@ public:
 
     void run(int read_fd) {
         while (keep_running) {
+            std::cout << "Target" << std::endl;
             char grid[GAME_HEIGHT][GAME_WIDTH];
             memset(grid, ' ', GAME_HEIGHT*GAME_WIDTH);
             if (read(read_fd, grid, GAME_HEIGHT * GAME_WIDTH * sizeof(char)) == -1) {
