@@ -137,7 +137,7 @@ private:
     DomainParticipant *participant_obstacles, *participant_targets;
     Subscriber *subscriber_obstacles, *subscriber_targets;
 
-    // Topics e DataReaders per Obstacles e Targets
+    // * Topics and DataReaders for Obstacles e Targets
     Topic *obstacles_topic_;
     DataReader *obstacles_reader_;
     Topic *targets_topic_;
@@ -198,7 +198,7 @@ public:
         DomainParticipantQos participantQos_obstacles = PARTICIPANT_QOS_DEFAULT;
         DomainParticipantQos participantQos_targets = PARTICIPANT_QOS_DEFAULT;
 
-        // Configure the current participant as SERVER
+        // * Configure the current participant as SERVER
         participantQos_obstacles.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
         participantQos_targets.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::CLIENT;
 
@@ -220,20 +220,20 @@ public:
         IPLocator::setPhysicalPort(server_locator_obstacles, server_port_obstacles);
         IPLocator::setLogicalPort(server_locator_obstacles, server_port_obstacles);
 
-       // Add the server
+        // * Add the Obstacles Server
         participantQos_obstacles.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator_obstacles);
 
-        // Define the Targets server locator to be on interface IPV4_TARGETS and port SERVER_PORT_TARGETS
+        // * Define the Targets server locator to be on interface IPV4_TARGETS and port SERVER_PORT_TARGETS
         constexpr uint16_t server_port_targets = SERVER_PORT_TARGETS;
         Locator_t server_locator_targets;
         IPLocator::setIPv4(server_locator_targets, IPV4_TARGETS_CLIENT);
         IPLocator::setPhysicalPort(server_locator_targets, server_port_targets);
         IPLocator::setLogicalPort(server_locator_targets, server_port_targets);
 
-        // Add the server
+        // * Add the Targets Server
         participantQos_targets.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator_targets);
 
-        // Crea il DomainParticipant
+        // * Create the DomainParticipants
         participant_obstacles = DomainParticipantFactory::get_instance()->create_participant(0, participantQos_obstacles);
         if (participant_obstacles == nullptr)
         {
@@ -246,10 +246,10 @@ public:
             std::cerr << "Errore nella creazione del DomainParticipant Targets con configurazione TCP/Discovery" << std::endl;
             return false;
         }
-        // Registra i tipi DDS
+        // * Register the two types of DDS
         obstacles_type_.register_type(participant_obstacles, "Obstacles");
         targets_type_.register_type(participant_targets, "Targets");
-        // Crea i topic "topic 1" e "topic 2"
+        // * Make topics "topic 1" and "topic 2"
         obstacles_topic_ = participant_obstacles->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
         if (obstacles_topic_ == nullptr) {
             return false;
@@ -269,7 +269,7 @@ public:
             return false;
         }
 
-        // Crea i DataReader per Obstacles e Targets
+        // * Make DataReaders for Obstacles and Targets
         obstacles_reader_ = subscriber_obstacles->create_datareader(obstacles_topic_, DATAREADER_QOS_DEFAULT, &obstacles_listener_);
         if (obstacles_reader_ == nullptr) {
             return false;
@@ -283,7 +283,6 @@ public:
 
     void run(char grid[GAME_HEIGHT][GAME_WIDTH]) {
         while (obstacles_listener_.samples_ == 0||targets_listener_.samples_ == 0){
-            //std::cout << "Blackboard" << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         // * Obtain the vectors of the obstacles' coordinates
@@ -395,7 +394,7 @@ int main(const int argc, char *argv[]) {
     int drone_pos[4] = {0, 0, 0, 0};
     int drone_force[2] = {0, 0};
     // * Score variables
-    int score = 500000000;
+    int score = MAX_SCORE;
     int distance_traveled = 0;
     int count_obstacles = 0;
     time_t start_time = time(NULL);

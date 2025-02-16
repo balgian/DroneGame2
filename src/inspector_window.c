@@ -23,7 +23,7 @@ int main() {
     noecho();
     curs_set(FALSE);
     start_color();
-    // * Set a color pair: white text with red background
+    // *White text with red background
     init_pair(4, COLOR_WHITE, COLOR_RED);
     // * Make the window
     int insp_height, insp_width;
@@ -32,8 +32,9 @@ int main() {
     box(inspect_win, 0, 0);
     wrefresh(inspect_win);
     refresh();
-
-    // Calcola la metà della larghezza per suddividere in due riquadri
+    // *Make two subwindows:
+    // *    - left_box: drone's data.
+    // *    - right_box: keypad.
     int half_width = insp_width / 2;
     WINDOW *left_box = newwin(insp_height - 2, half_width - 2, 1, 1);
     WINDOW *right_box = newwin(insp_height - 2, insp_width - half_width - 2, 1, half_width + 1);

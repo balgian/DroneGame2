@@ -22,8 +22,8 @@
 #include <fastdds/rtps/transport/TCPv4TransportDescriptor.hpp>
 #include <fastdds/utils/IPLocator.hpp>
 
-#include "TargetsPubSubTypes.hpp"  // Tipo DDS generato da Targets.idl
-#include "macros.h"                // Deve definire GAME_HEIGHT e GAME_WIDTH
+#include "TargetsPubSubTypes.hpp"
+#include "macros.h"
 
 using namespace eprosima::fastdds::dds;
 using namespace eprosima::fastdds::rtps;
@@ -34,8 +34,8 @@ FILE *logfile;
 static volatile sig_atomic_t keep_running = 1;
 
 class CustomTargetsPublisher {
-    // * DDS Target class
 private:
+    // * DDS Message (defined in Targets.idl)
     Targets my_message_;
     DomainParticipant* participant_;
     Publisher* publisher_;
@@ -88,17 +88,18 @@ public:
         my_message_.targets_number(0);
 
         DomainParticipantQos participantQos = PARTICIPANT_QOS_DEFAULT;
+
         //participantQos.name("Targets_Publisher");
 
         // * Configure the current participant as SERVER
         participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
 
-        // Add custom user transport with TCP port TCP_LISTENING_PORT_TARGETS
+        // * Add custom user transport with TCP port TCP_LISTENING_PORT_TARGETS
         auto data_transport = std::make_shared<TCPv4TransportDescriptor>();
         data_transport->add_listener_port(TCP_LISTENING_PORT_TARGETS);
         participantQos.transport().user_transports.push_back(data_transport);
 
-        // Define the listening locator to be on interface IPV4_TARGETS_SERVER and port TCP_LISTENING_PORT_TARGETS
+        // * Define the listening locator to be on interface IPV4_TARGETS_SERVER and port TCP_LISTENING_PORT_TARGETS
         constexpr uint16_t tcp_listening_port = TCP_LISTENING_PORT_TARGETS;
         Locator_t listening_locator;
         IPLocator::setIPv4(listening_locator, IPV4_TARGETS_SERVER);
@@ -147,8 +148,6 @@ public:
         my_message_.targets_number(count);
         int flag = 0;
         while (!flag || keep_running) {
-            //std::cout << "Targets ready to send" << std::endl;
-            //std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (listener_.matched_ > 0) {
                 writer_->write(&my_message_);
                 Duration_t timeout;
@@ -170,12 +169,12 @@ public:
                 perror("read");
                 EXIT_FAILURE;
             }
-            // Genera i target: inserisce cifre decrescenti da '9' a '0'
+            // * Generate targets (decreasing from '9' to '0')
             char num_target = '9';
             while (num_target >= '0') {
                 int x = (rand() % (GAME_WIDTH - 2)) + 1;
                 int y = (rand() % (GAME_HEIGHT - 2)) + 1;
-                // Se la cella è vuota e non è il centro, inserisce il target
+                // * Excise the center of the map (the drone will be there at the beginning)
                 if (grid[y][x] == ' ' && !(x == GAME_WIDTH / 2 && y == GAME_HEIGHT / 2)) {
                     grid[y][x] = num_target;
                     num_target--;

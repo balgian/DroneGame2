@@ -5,7 +5,6 @@
 
 #include <stdlib.h>
 #include <unistd.h>
-#include <stdio.h>
 #include <iostream>
 #include <string.h>
 #include <signal.h>
@@ -35,7 +34,7 @@ static volatile sig_atomic_t keep_running = 1;
 
 class CustomTransportPublisher {
 private:
-    // Messaggio DDS (tipo Obstacles definito in Obstacles.idl)
+    // * DDS Message (defined in Obstacles.idl)
     Obstacles my_message_;
     DomainParticipant* participant_;
     Publisher* publisher_;
@@ -84,22 +83,22 @@ public:
         DomainParticipantFactory::get_instance()->delete_participant(participant_);
     }
 
-    //! Inizializza il publisher DDS
     bool init() {
         my_message_.obstacles_number(0);
 
         DomainParticipantQos participantQos = PARTICIPANT_QOS_DEFAULT;
+
         //participantQos.name("Obstacles_Publisher");
 
         // * Configure the current participant as SERVER
         participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
 
-        // Add custom user transport with TCP port TCP_LISTENING_PORT_OBSTACLES
+        // * Add custom user transport with TCP port TCP_LISTENING_PORT_OBSTACLES
         auto data_transport = std::make_shared<TCPv4TransportDescriptor>();
         data_transport->add_listener_port(TCP_LISTENING_PORT_OBSTACLES);
         participantQos.transport().user_transports.push_back(data_transport);
 
-        // Define the listening locator to be on interface IPV4_OBSTACLES_SERVER and port TCP_LISTENING_PORT_OBSTACLES
+        // * Define the listening locator to be on interface IPV4_OBSTACLES_SERVER and port TCP_LISTENING_PORT_OBSTACLES
         constexpr uint16_t tcp_listening_port = TCP_LISTENING_PORT_OBSTACLES;
         Locator_t listening_locator;
         IPLocator::setIPv4(listening_locator, IPV4_OBSTACLES_SERVER);
@@ -132,7 +131,7 @@ public:
     }
 
     bool publish_from_grid(const char grid[GAME_HEIGHT][GAME_WIDTH]) {
-        // Pulisce le sequenze precedenti
+        // * Clean previous sequeces
         my_message_.obstacles_x().clear();
         my_message_.obstacles_y().clear();
         int count = 0;
@@ -149,8 +148,6 @@ public:
 
         int flag = 0;
         while (!flag || keep_running) {
-            //std::cout << "Obstacles ready to send" << std::endl;
-            //std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (listener_.matched_ > 0) {
                 writer_->write(&my_message_);
                 Duration_t timeout;
@@ -244,7 +241,7 @@ int main (int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     // * Initialise and call the DDS server class paasing the random number of obstacles
-    uint32_t total_obstacles = static_cast<int>(GAME_HEIGHT * GAME_WIDTH * 0.001);
+    uint32_t total_obstacles = static_cast<int>(GAME_HEIGHT * GAME_WIDTH * 0.002);
     auto* mypub = new CustomTransportPublisher();
     if (mypub->init()) {
         mypub->run(total_obstacles, write_fd);

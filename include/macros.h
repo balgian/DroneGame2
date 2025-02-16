@@ -53,4 +53,6 @@
 #define RHO_TRG 6.0             // * Influence distance for attraction
 #define MIN_RHO_TRG 4.0         // * Minimum distance of attraction
 
+#define MAX_SCORE 500000000         // * Maximum game score
+
 #endif                          // MACROS_H
