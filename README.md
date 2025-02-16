@@ -1,4 +1,4 @@
-# Assignment 1: Drone Game 2
+# Assignment 2: Drone Game 2
 
 `Author` Gian Marco Balia\
 `Student ID` 4398275\
@@ -7,15 +7,15 @@
 `GitHub` https://github.com/balgian/DroneGame2.git
 
 
-Drone Game 2 is a multi-process C project where a drone navigates through a a map filled with obstacles and targets, but now online! It utilizes interprocess communication via pipes and signals, with dedicated components for managing the game state, processing user input, computing drone dynamics, and monitoring processes and **TCP** communication with **Fast DDS 3.1.2 Discovery Server**. Built and tested on **Ubuntu 24.04** running on an **AMD processor**, with **C 17** and **CMake 3.28**. Follow the instructions below to set up and run the project.
+Drone Game 2 is a multi-process C project where a drone navigates through a map filled with obstacles and targets, now with online capabilities. It utilizes interprocess communication via pipes and signals, with dedicated components for managing the game state, processing user input, computing drone dynamics, and monitoring processes and **TCP** communication with **Fast DDS 3.1.2 Discovery Server**. Built and tested on **Ubuntu 24.04** running on an **AMD processor**, with **C 17** and **CMake 3.28**. Follow the instructions below to set up and run the project.
 
 ## Requirements
 
 To compile and run the project, the following dependencies must be installed:
 
 - `ncurses` (for terminal handling)
-- `fastcdr` (for TCP communication)
-- `fastdds` (for TCP communication)
+- `fastcdr` (for Fast DDS communication)
+- `fastdds` (for Fast DDS communication)
 - `CMake` (for build configuration)
 
 **NB**: It is tested with Fast DDS 3.1.2 version as reported in [TCP Communication with Discovery Server](https://fast-dds.docs.eprosima.com/en/latest/fastdds/use_cases/tcp/tcp_with_discovery_server.html). Previous versions couldn't work properly.\
@@ -64,7 +64,7 @@ If you don't have `CMake` or `ncurses` installed, follow these steps:
 
 ### Step 1: Create a build directory
 
-Create a new directory inside `DroneGame`for building the project with
+Create a new directory inside `/DroneGame`for building the project with
 
 ```bash
 mkdir cmake-build && cd cmake-build
@@ -104,7 +104,7 @@ __NB__: When closed take some seconds.
 __NB__: 
 
 - The mail symbol means pipe.
-- In `/DroneGame2/include/macros.h` there are define the IPv4s and port numbers to configure the communication to receive and send data.
+- In `/DroneGame2/include/macros.h` there are define the IPv4s, port numbers, and topic's names to configure the communication to receive and send data.
 
 Actives components:
 
