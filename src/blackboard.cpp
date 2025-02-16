@@ -249,12 +249,12 @@ public:
         // * Register the two types of DDS
         obstacles_type_.register_type(participant_obstacles, "Obstacles");
         targets_type_.register_type(participant_targets, "Targets");
-        // * Make topics "topic 1" and "topic 2"
-        obstacles_topic_ = participant_obstacles->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
+        // * Make topics TOPIC_NAME_OBSTACLES and TOPIC_NAME_TARGETS
+        obstacles_topic_ = participant_obstacles->create_topic(TOPIC_NAME_OBSTACLES, "Obstacles", TOPIC_QOS_DEFAULT);
         if (obstacles_topic_ == nullptr) {
             return false;
         }
-        targets_topic_ = participant_targets->create_topic("topic 2", "Targets", TOPIC_QOS_DEFAULT);
+        targets_topic_ = participant_targets->create_topic(TOPIC_NAME_TARGETS, "Targets", TOPIC_QOS_DEFAULT);
         if (targets_topic_ == nullptr) {
             return false;
         }

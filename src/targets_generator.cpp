@@ -1,6 +1,7 @@
 //
 // Created by Gian Marco Balia
 //
+// src/targets_generator.cpp
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -114,7 +115,7 @@ public:
         }
 
         type_.register_type(participant_, "Targets");
-        topic_ = participant_->create_topic("topic 2", "Targets", TOPIC_QOS_DEFAULT);
+        topic_ = participant_->create_topic(TOPIC_NAME_TARGETS, "Targets", TOPIC_QOS_DEFAULT);
         if (topic_ == nullptr) {
             return false;
         }

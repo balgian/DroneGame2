@@ -113,7 +113,7 @@ public:
         }
 
         type_.register_type(participant_, "Obstacles");
-        topic_ = participant_->create_topic("topic 1", "Obstacles", TOPIC_QOS_DEFAULT);
+        topic_ = participant_->create_topic(TOPIC_NAME_OBSTACLES, "Obstacles", TOPIC_QOS_DEFAULT);
         if (topic_ == nullptr) {
             return false;
         }

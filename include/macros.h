@@ -21,10 +21,12 @@
 // * Obstacles Server
 #define TCP_LISTENING_PORT_OBSTACLES 12345
 #define IPV4_OBSTACLES_SERVER "127.0.0.1"
+#define TOPIC_NAME_OBSTACLES "topic 1"
 
 // * Targets Server
 #define TCP_LISTENING_PORT_TARGETS 12346
 #define IPV4_TARGETS_SERVER "127.0.0.1"
+#define TOPIC_NAME_TARGETS "topic 2"
 
 // * Blackboard Client
 #define SERVER_PORT_OBSTACLES 12345         // ! <-TCP_LISTENING_PORT_OBSTACLES
@@ -36,7 +38,7 @@
 // * Game parameters
 #define GAME_HEIGHT 100
 #define GAME_WIDTH 100
-#define FRAME_RATE 60.0         // * Hz
+#define FRAME_RATE 60.0                     // * Hz
 
 #define INSPECT_WIDTH 20
 
@@ -45,14 +47,14 @@
 #define DAMPING 1.0
 #define TIME 10.0
 // * Obstacles' repulsive force
-#define ETA 3.0                 // * Repulsion scaling factor
-#define RHO_OBST 6.0            // * Influence distance for repulsion
-#define MIN_RHO_OBST 4.0        // * Minimum distance of repulsion
+#define ETA 3.0                             // * Repulsion scaling factor
+#define RHO_OBST 6.0                        // * Influence distance for repulsion
+#define MIN_RHO_OBST 4.0                    // * Minimum distance of repulsion
 // * Targets' attractive force
-#define EPSILON 1.0             // * Attractive scaling factor
-#define RHO_TRG 6.0             // * Influence distance for attraction
-#define MIN_RHO_TRG 4.0         // * Minimum distance of attraction
+#define EPSILON 1.0                         // * Attractive scaling factor
+#define RHO_TRG 6.0                         // * Influence distance for attraction
+#define MIN_RHO_TRG 4.0                     // * Minimum distance of attraction
 
-#define MAX_SCORE 500000000         // * Maximum game score
+#define MAX_SCORE 500000000                 // * Maximum game score
 
-#endif                          // MACROS_H
+#endif                                      // MACROS_H
