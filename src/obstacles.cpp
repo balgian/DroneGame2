@@ -94,15 +94,15 @@ public:
         // * Configure the current participant as SERVER
         participantQos.wire_protocol().builtin.discovery_config.discoveryProtocol = DiscoveryProtocol::SERVER;
 
-        // Add custom user transport with TCP port 12345
+        // Add custom user transport with TCP port TCP_LISTENING_PORT_OBSTACLES
         auto data_transport = std::make_shared<TCPv4TransportDescriptor>();
-        data_transport->add_listener_port(12345);
+        data_transport->add_listener_port(TCP_LISTENING_PORT_OBSTACLES);
         participantQos.transport().user_transports.push_back(data_transport);
 
-        // Define the listening locator to be on interface 192.168.10.57 and port 12345
-        constexpr uint16_t tcp_listening_port = 12345;
+        // Define the listening locator to be on interface IPV4_OBSTACLES_SERVER and port TCP_LISTENING_PORT_OBSTACLES
+        constexpr uint16_t tcp_listening_port = TCP_LISTENING_PORT_OBSTACLES;
         Locator_t listening_locator;
-        IPLocator::setIPv4(listening_locator, "127.0.0.1");
+        IPLocator::setIPv4(listening_locator, IPV4_OBSTACLES_SERVER);
         IPLocator::setPhysicalPort(listening_locator, tcp_listening_port);
         IPLocator::setLogicalPort(listening_locator, tcp_listening_port);
         participantQos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(listening_locator);

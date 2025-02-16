@@ -205,7 +205,7 @@ public:
         //participantQos_obstacles.name("Obstacles_Subscriber");
         //participantQos_targets.name("Targets_Subscriber");
 
-        // Add custom user transport with TCP port 0 (automatic port assignation)
+        // *Add custom user transport with TCP port 0 (automatic port assignation)
         auto data_transport_obstacles = std::make_shared<TCPv4TransportDescriptor>();
         data_transport_obstacles->add_listener_port(0);
         participantQos_obstacles.transport().user_transports.push_back(data_transport_obstacles);
@@ -213,20 +213,20 @@ public:
         data_transport_targets->add_listener_port(0);
         participantQos_targets.transport().user_transports.push_back(data_transport_targets);
 
-        // * Define the Obstacles server locator to be on interface 192.168.10.57 and port 12345
-        constexpr uint16_t server_port_obstacles = 12345;
+        // * Define the Obstacles server locator to be on interface IPV4_OBSTACLES and port SERVER_PORT_OBSTACLES
+        constexpr uint16_t server_port_obstacles = SERVER_PORT_OBSTACLES;
         Locator_t server_locator_obstacles;
-        IPLocator::setIPv4(server_locator_obstacles, "127.0.0.1");
+        IPLocator::setIPv4(server_locator_obstacles, IPV4_OBSTACLES_CLIENT);
         IPLocator::setPhysicalPort(server_locator_obstacles, server_port_obstacles);
         IPLocator::setLogicalPort(server_locator_obstacles, server_port_obstacles);
 
        // Add the server
         participantQos_obstacles.wire_protocol().builtin.discovery_config.m_DiscoveryServers.push_back(server_locator_obstacles);
 
-        // Define the Targets server locator to be on interface 192.168.10.57 and port 12345
-        constexpr uint16_t server_port_targets = 12346;
+        // Define the Targets server locator to be on interface IPV4_TARGETS and port SERVER_PORT_TARGETS
+        constexpr uint16_t server_port_targets = SERVER_PORT_TARGETS;
         Locator_t server_locator_targets;
-        IPLocator::setIPv4(server_locator_targets, "127.0.0.1");
+        IPLocator::setIPv4(server_locator_targets, IPV4_TARGETS_CLIENT);
         IPLocator::setPhysicalPort(server_locator_targets, server_port_targets);
         IPLocator::setLogicalPort(server_locator_targets, server_port_targets);
 
